@@ -165,36 +165,50 @@ export default function RoutingAgentChat({ userId }: RoutingAgentChatProps) {
                 key={message.id}
                 className={`${styles.message} ${styles[message.role]}`}
               >
-                <div
-                  className={`${styles.messageBubble} ${
-                    isLoading && message.role === 'assistant'
-                      ? styles.typing
-                      : ''
-                  }`}
-                >
-                  {message.content ? (
+                {message.role === 'assistant' ? (
+                  <div className={styles.assistantWrapper}>
+                    <div className={styles.assistantLabel}>Ai4Kingdom</div>
+                    <div
+                      className={`${styles.messageBubble} ${
+                        isLoading && message.role === 'assistant'
+                          ? styles.typing
+                          : ''
+                      }`}
+                    >
+                      {message.content ? (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>
+                          {renderWithLinks(message.content)}
+                        </div>
+                      ) : (
+                        <div className={styles.loadingDots}>
+                          <div className={styles.loadingDot}></div>
+                          <div className={styles.loadingDot}></div>
+                          <div className={styles.loadingDot}></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.messageBubble}>
                     <div style={{ whiteSpace: 'pre-wrap' }}>
                       {renderWithLinks(message.content)}
                     </div>
-                  ) : (
-                    <div className={styles.loadingDots}>
-                      <div className={styles.loadingDot}></div>
-                      <div className={styles.loadingDot}></div>
-                      <div className={styles.loadingDot}></div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             ))
           )}
 
           {isLoading && messages[messages.length - 1]?.role === 'user' && (
             <div className={`${styles.message} ${styles.assistant}`}>
-              <div className={styles.messageBubble}>
-                <div className={styles.loadingDots}>
-                  <div className={styles.loadingDot}></div>
-                  <div className={styles.loadingDot}></div>
-                  <div className={styles.loadingDot}></div>
+              <div className={styles.assistantWrapper}>
+                <div className={styles.assistantLabel}>Ai4Kingdom</div>
+                <div className={styles.messageBubble}>
+                  <div className={styles.loadingDots}>
+                    <div className={styles.loadingDot}></div>
+                    <div className={styles.loadingDot}></div>
+                    <div className={styles.loadingDot}></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -210,17 +224,6 @@ export default function RoutingAgentChat({ userId }: RoutingAgentChatProps) {
       <div className={styles.inputSection}>
         <div className={styles.inputWrapper}>
           <div className={styles.inputField}>
-            {speechSupported && (
-              <button
-                type="button"
-                className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
-                onClick={toggleListening}
-                disabled={isLoading}
-                title={isListening ? '停止錄音' : '語音輸入'}
-              >
-                🎤
-              </button>
-            )}
             <textarea
               ref={textareaRef}
               value={input}
@@ -230,6 +233,25 @@ export default function RoutingAgentChat({ userId }: RoutingAgentChatProps) {
               disabled={isLoading}
               rows={1}
             />
+            {speechSupported && (
+              <button
+                type="button"
+                className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
+                onClick={toggleListening}
+                disabled={isLoading}
+                title={isListening ? '停止錄音' : '語音輸入'}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  width="27"
+                  height="27"
+                  fill="#000000"
+                >
+                  <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm0 2a2 2 0 0 0-2 2v6a2 2 0 0 0 4 0V5a2 2 0 0 0-2-2zm-1 14.93V20H9v2h6v-2h-2v-2.07A7.001 7.001 0 0 0 19 11h-2a5 5 0 0 1-10 0H5a7.001 7.001 0 0 0 6 6.93z"/>
+                </svg>
+              </button>
+            )}
           </div>
           <button
             className={styles.sendButton}
