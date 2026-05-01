@@ -47,25 +47,21 @@ export default function RoutingAgentPage() {
 
   return (
     <>
-      <style jsx global>{`
-        html,
-        body {
+      <style dangerouslySetInnerHTML={{ __html: `
+        html, body {
           margin: 0;
           padding: 0;
-          background: #ffffff;
+          background: #ffffff !important;
           height: 100%;
           overflow: hidden;
         }
-
-        #__next {
+        main {
+          background: #ffffff !important;
+          min-height: unset !important;
           height: 100%;
+          overflow: hidden !important;
         }
-
-        body > div,
-        body > div > main {
-          height: 100%;
-        }
-      `}</style>
+      `}} />
       <RoutingAgentChat userId={userId} />
     </>
   );
