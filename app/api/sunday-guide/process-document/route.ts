@@ -17,12 +17,13 @@ const openai = new OpenAI({
 });
 
 // 用 gpt-4o-mini 直接從 summary 抽取講道標題
-async function extractSermonTitle(openaiClient: OpenAI, summary: string): Promise<string | null> {
+async function extractSermonTitle(openaiClient: OpenAI, summary: string, fileName?: string): Promise<string | null> {
   if (!summary) return null;
   try {
+    const fileNameHint = fileName ? `\n\n文件名稱（僅供參考）：${fileName}` : '';
     const res = await openaiClient.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: `從以下講章總結中提取講道標題，只回答標題本身，不要任何其他內容、標點或說明：\n\n${summary.slice(0, 800)}` }],
+      messages: [{ role: 'user', content: `從以下講章總結中提取講道標題，只回答標題本身，不要任何其他內容、標點或說明。注意：如果看到「讲章标题」、「一、讲章标题」等模板佔位符文字，請忽略它們，從總結內容中找出真實的講道主題作為標題。${fileNameHint}\n\n${summary.slice(0, 800)}` }],
       max_tokens: 60,
       temperature: 0,
     });
@@ -425,7 +426,7 @@ ${type === 'devotional' ?
     
     console.log(`[DEBUG] 完整掃描找到 ${existingRecords.Items.length} 條fileId${unitId ? '+unitId' : ''}匹配記錄（共${pageCount}頁）`);
     
-    const sermonTitle = await extractSermonTitle(openai, results.summary) || null;
+    const sermonTitle = fileName ? fileName.replace(/\.[^.]+$/, '') : (await extractSermonTitle(openai, results.summary) || null);
     console.log(`[DEBUG] 提取講章標題: ${sermonTitle}`);
 
     if (existingRecords.Items && existingRecords.Items.length > 0) {
