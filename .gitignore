@@ -69,7 +69,7 @@ amplifyconfiguration.json
 amplify-build-config.json
 amplify-gradle-config.json
 amplifytools.xcconfig
-# amplify_outputs.json  # 暂时注释掉
+amplify_outputs.json
 amplifyconfiguration*
 
 # IDE

@@ -1,11 +1,9 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
-import { data } from './data/resource';
 import { secret } from '@aws-amplify/backend';
 
 const backend = defineBackend({
-  auth,
-  data
+  auth
 });
 
 // 定义 OpenAI 相关的密钥
