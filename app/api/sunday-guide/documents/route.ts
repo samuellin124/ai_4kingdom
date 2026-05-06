@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createDynamoDBClient } from '../../../utils/dynamodb';
-import { PutCommand, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, ScanCommand, DeleteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ASSISTANT_IDS, findUnitByAssistantId, getSundayGuideUnitConfig } from '@/app/config/constants';
 import { getUnitAllowedUploaders } from '@/app/utils/getUnitAllowedUploaders';
 
@@ -17,8 +17,10 @@ export async function GET(request: Request) {
   const unitIdParam = searchParams.get('unitId') || undefined;
     let userId = searchParams.get('userId');
     const allUsers = searchParams.get('allUsers') === 'true'; // 新增：是否獲取所有用戶的文檔
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const pageParam = searchParams.get('page');
+    const limitParam = searchParams.get('limit');
+    const page = pageParam ? parseInt(pageParam) : null;
+    const limit = limitParam ? parseInt(limitParam) : null;
     
     console.log('[DEBUG] 請求參數:', {
       assistantId,
@@ -118,19 +120,20 @@ export async function GET(request: Request) {
       fileId: item.fileId,
       fileName: item.fileName || '未命名文件',
       sermonTitle: item.sermonTitle || null,
+      createdAt: item.Timestamp,
       updatedAt: item.updatedAt || item.Timestamp,
       userId: item.userId || item.UserId || '-',
       unitId: item.unitId || findUnitByAssistantId(item.assistantId),
       summary: item.summary ? '已生成' : '未生成',
       fullText: item.fullText ? '已生成' : '未生成',
-      devotional: item.devotional ? '已生成' : '未生成', 
+      devotional: item.devotional ? '已生成' : '未生成',
       bibleStudy: item.bibleStudy ? '已生成' : '未生成'
     })) || [];
 
-    // 按時間排序（最新的在前面）
+    // 按上傳時間排序（最新的在前面）
     records = records.sort((a, b) => {
-      const dateA = new Date(a.updatedAt).getTime();
-      const dateB = new Date(b.updatedAt).getTime();
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
       return dateB - dateA;
     });
 
@@ -159,7 +162,7 @@ export async function GET(request: Request) {
       records: paginatedRecords,
       totalCount: totalCount,
       currentPage: page,
-      totalPages: Math.ceil(totalCount / limit)
+      totalPages: limit ? Math.ceil(totalCount / limit) : 1
     });
     
   } catch (error) {
@@ -461,5 +464,73 @@ export async function DELETE(request: Request) {
   } catch (error) {
     console.error('[DELETE /api/sunday-guide/documents] 失敗', error);
     return NextResponse.json({ success: false, error: '刪除失敗' }, { status: 500 });
+  }
+}
+
+// 更新文檔標題（sermonTitle）
+export async function PATCH(request: Request) {
+  try {
+    const { fileId, unitId, userId, sermonTitle } = await request.json();
+    if (!fileId || !unitId || !userId || typeof sermonTitle !== 'string') {
+      return NextResponse.json({ success: false, error: '缺少必要參數' }, { status: 400 });
+    }
+    const trimmedTitle = sermonTitle.trim();
+    if (!trimmedTitle) {
+      return NextResponse.json({ success: false, error: '標題不能為空' }, { status: 400 });
+    }
+
+    const docClient = await createDynamoDBClient();
+    const tableName = process.env.NEXT_PUBLIC_SUNDAY_GUIDE_TABLE || 'SundayGuide';
+
+    // 找到所有同 fileId 的紀錄
+    let items: any[] = [];
+    let lastKey: any = undefined;
+    let scanPages = 0;
+    do {
+      const scanRes = await docClient.send(new ScanCommand({
+        TableName: tableName,
+        FilterExpression: 'fileId = :fid',
+        ExpressionAttributeValues: { ':fid': fileId },
+        ExclusiveStartKey: lastKey,
+      }));
+      items = items.concat(scanRes.Items || []);
+      lastKey = scanRes.LastEvaluatedKey;
+      scanPages++;
+    } while (lastKey && scanPages < 50);
+
+    if (items.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到檔案紀錄' }, { status: 404 });
+    }
+
+    const target = items.sort((a: any, b: any) =>
+      new Date(b.Timestamp).getTime() - new Date(a.Timestamp).getTime()
+    )[0];
+
+    // 權限：上傳者本人或該單位管理員
+    const uploader = (target.uploadedBy || target.userId || target.UserId || '').toString();
+    const allowedUploaders = await getUnitAllowedUploaders(unitId);
+    const isAdmin = allowedUploaders.length > 0 && allowedUploaders.includes(userId.toString());
+    if (uploader !== userId.toString() && !isAdmin) {
+      return NextResponse.json({ success: false, error: '無修改權限' }, { status: 403 });
+    }
+
+    // 更新所有同 fileId 紀錄的 sermonTitle
+    await Promise.all(
+      items
+        .filter((item: any) => item.assistantId && item.Timestamp)
+        .map((item: any) =>
+          docClient.send(new UpdateCommand({
+            TableName: tableName,
+            Key: { assistantId: item.assistantId, Timestamp: item.Timestamp },
+            UpdateExpression: 'SET sermonTitle = :title',
+            ExpressionAttributeValues: { ':title': trimmedTitle },
+          }))
+        )
+    );
+
+    return NextResponse.json({ success: true, sermonTitle: trimmedTitle });
+  } catch (error) {
+    console.error('[PATCH /api/sunday-guide/documents] 失敗', error);
+    return NextResponse.json({ success: false, error: '更新失敗' }, { status: 500 });
   }
 }

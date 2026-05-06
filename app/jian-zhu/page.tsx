@@ -23,12 +23,15 @@ export default function JianZhuPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadTime, setUploadTime] = useState<string>('');
   const [isUploadDisabled, setIsUploadDisabled] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<Array<{ fileName: string; uploadDate: string; fileId: string; uploaderId?: string }>>([]);
+  const [allFiles, setAllFiles] = useState<Array<{ fileName: string; sermonTitle?: string | null; uploadDate: string; fileId: string; uploaderId?: string }>>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const filesPerPage = 10;
+  const totalPages = Math.ceil(allFiles.length / filesPerPage);
+  const recentFiles = allFiles.slice((currentPage - 1) * filesPerPage, currentPage * filesPerPage);
 
   const [allowedUploaders, setAllowedUploaders] = useState<string[]>([]);
   const hasUploadPermission = !!user?.user_id && allowedUploaders.includes(user.user_id);
@@ -45,27 +48,26 @@ export default function JianZhuPage() {
   useEffect(() => { setIsUploadDisabled(remainingCredits <= 0); }, [remainingCredits, hasInsufficientTokens]);
   useEffect(() => { localStorage.setItem('currentUnitId', 'jianZhu'); }, []);
 
-  const fetchAllFileRecords = async (page: number = 1) => {
+  const fetchAllFileRecords = async () => {
     try {
-      const res = await fetch(`/api/sunday-guide/documents?page=${page}&limit=${filesPerPage}&allUsers=true&unitId=jianZhu`);
+      const res = await fetch(`/api/sunday-guide/documents?allUsers=true&unitId=jianZhu`);
       if (!res.ok) throw new Error('獲取文件記錄失敗');
       const data = await res.json();
       if (data.success && data.records) {
-        const sorted = data.records.sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        setRecentFiles(sorted.map((rec: any) => ({
+        const sorted = data.records.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setAllFiles(sorted.map((rec: any) => ({
           fileName: rec.fileName || '未命名文件',
-          uploadDate: new Date(rec.updatedAt).toLocaleDateString('zh-TW'),
+          sermonTitle: rec.sermonTitle || null,
+          uploadDate: new Date(rec.createdAt).toLocaleDateString('zh-TW'),
           fileId: rec.fileId || '',
           uploaderId: rec.userId || '未知',
         })));
-        setTotalPages(Math.ceil((data.totalCount || sorted.length) / filesPerPage));
+        setCurrentPage(1);
       } else {
-        setRecentFiles([]);
-        setTotalPages(1);
+        setAllFiles([]);
       }
     } catch {
-      setRecentFiles([]);
-      setTotalPages(1);
+      setAllFiles([]);
     }
   };
 
@@ -85,7 +87,7 @@ export default function JianZhuPage() {
       if (!res.ok || !data.success) {
         alert('刪除失敗: ' + (data.error || res.status));
       } else {
-        await fetchAllFileRecords(currentPage);
+        await fetchAllFileRecords();
         if (selectedFileId === fileId) setSelectedFileId(null);
       }
     } catch (e: any) {
@@ -95,12 +97,35 @@ export default function JianZhuPage() {
     }
   };
 
-  useEffect(() => { fetchAllFileRecords(currentPage); }, [user]);
-  useEffect(() => { fetchAllFileRecords(currentPage); }, [currentPage]);
+  const handleRenameTitle = async (fileId: string, newTitle: string) => {
+    if (!user?.user_id || !newTitle.trim()) { setEditingFileId(null); return; }
+    const file = allFiles.find(f => f.fileId === fileId);
+    const currentTitle = file?.sermonTitle || file?.fileName || '';
+    if (newTitle.trim() === currentTitle) { setEditingFileId(null); return; }
+    try {
+      const res = await fetch('/api/sunday-guide/documents', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, unitId: 'jianZhu', userId: user.user_id, sermonTitle: newTitle.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAllFiles(prev => prev.map(f => f.fileId === fileId ? { ...f, sermonTitle: data.sermonTitle } : f));
+      } else {
+        alert('更新失敗: ' + (data.error || res.status));
+      }
+    } catch (e: any) {
+      alert('更新時發生錯誤: ' + (e.message || '未知錯誤'));
+    } finally {
+      setEditingFileId(null);
+    }
+  };
+
+  useEffect(() => { fetchAllFileRecords(); }, [user]);
 
   const handleFileProcessed = async (_content: ProcessedContent) => {
     setIsProcessing(false);
-    await fetchAllFileRecords(currentPage);
+    await fetchAllFileRecords();
     await refreshUsage();
   };
 
@@ -203,13 +228,41 @@ export default function JianZhuPage() {
                         <span className={styles.deleteButtonPlaceholder} />
                       )}
                       <span className={styles.docIndex}>{(currentPage - 1) * filesPerPage + idx + 1}.</span>
-                      <span className={styles.docFileName}>{file.fileName}</span>
+                      {editingFileId === file.fileId ? (
+                        <input
+                          className={styles.docTitleInput}
+                          value={editingTitle}
+                          autoFocus
+                          onChange={e => setEditingTitle(e.target.value)}
+                          onBlur={() => handleRenameTitle(file.fileId, editingTitle)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleRenameTitle(file.fileId, editingTitle);
+                            if (e.key === 'Escape') setEditingFileId(null);
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <>
+                          <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                          {user?.user_id && (user.user_id === file.uploaderId || allowedUploaders.includes(user.user_id)) && (
+                            <button
+                              className={styles.editTitleButton}
+                              title="編輯標題"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setEditingTitle(file.sermonTitle || file.fileName);
+                                setEditingFileId(file.fileId);
+                              }}
+                            >✎</button>
+                          )}
+                        </>
+                      )}
                       <span className={styles.docDate}>{file.uploadDate}</span>
                     </li>
                   ))}
                 </ul>
 
-                {totalPages > 1 && (
+                {allFiles.length > 0 && (
                   <div className={styles.pagination}>
                     <button
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}

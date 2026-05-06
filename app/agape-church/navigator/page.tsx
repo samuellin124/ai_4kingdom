@@ -50,11 +50,11 @@ function AgapeNavigatorContent() {
   if (!res.ok) throw new Error('获取文件记录失败');
       const data = await res.json();
       if (data.success && data.records?.length) {
-        const sorted = [...data.records].sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        const sorted = [...data.records].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         const mapped: AgapeRecord[] = sorted.map((r: any) => ({
           fileName: r.fileName || '未命名文件',
             sermonTitle: r.sermonTitle || null,
-            uploadTime: r.updatedAt,
+            uploadTime: r.createdAt,
             fileUniqueId: r.fileId,
             fileId: r.fileId
           }));

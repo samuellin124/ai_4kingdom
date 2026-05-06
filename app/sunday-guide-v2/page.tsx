@@ -89,15 +89,19 @@ function SundayGuideContent() {
   const [isUploadDisabled, setIsUploadDisabled] = useState(false);
 
   // ---- Documents list states ----
-  const [recentFiles, setRecentFiles] = useState<
+  const [allFiles, setAllFiles] = useState<
     Array<{ fileName: string; sermonTitle?: string | null; uploadDate: string; fileId: string; uploaderId?: string }>
   >([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [allowedUploaders, setAllowedUploaders] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const filesPerPage = 10;
+  const totalPages = Math.ceil(allFiles.length / filesPerPage);
+  const recentFiles = allFiles.slice((currentPage - 1) * filesPerPage, currentPage * filesPerPage);
 
   // ---- Guide navigator states ----
   const [selectedMode, setSelectedMode] = useState<GuideMode>(null);
@@ -288,47 +292,68 @@ function SundayGuideContent() {
     setIsUploadDisabled(remainingCredits <= 0);
   }, [remainingCredits, hasInsufficientTokens]);
 
-  // ---- Fetch browsable documents (paginated, all users) ----
-  const fetchAllFileRecords = async (page: number = 1) => {
+  // ---- Fetch browsable documents (all at once, client-side pagination) ----
+  const fetchAllFileRecords = async () => {
     try {
       const response = await fetch(
-        `/api/sunday-guide/documents?assistantId=${ASSISTANT_IDS.SUNDAY_GUIDE}&page=${page}&limit=${filesPerPage}&allUsers=true`
+        `/api/sunday-guide/documents?assistantId=${ASSISTANT_IDS.SUNDAY_GUIDE}&allUsers=true`
       );
       if (!response.ok) throw new Error('獲取文件記錄失敗');
       const data = await response.json();
       if (data.success && data.records) {
         const sortedFiles = data.records.sort(
           (a: any, b: any) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
-        const filesData = sortedFiles.map((rec: any) => ({
+        setAllFiles(sortedFiles.map((rec: any) => ({
           fileName: rec.fileName || '未命名文件',
           sermonTitle: rec.sermonTitle || null,
-          uploadDate: new Date(rec.updatedAt).toLocaleDateString('zh-TW'),
+          uploadDate: new Date(rec.createdAt).toLocaleDateString('zh-TW'),
           fileId: rec.fileId || '',
           uploaderId: rec.userId || '未知用戶',
-        }));
-        setRecentFiles(filesData);
-        setTotalPages(Math.ceil((data.totalCount || filesData.length) / filesPerPage));
+        })));
+        setCurrentPage(1);
       } else {
-        setRecentFiles([]);
-        setTotalPages(1);
+        setAllFiles([]);
       }
     } catch (error) {
       console.error('獲取文件記錄失敗:', error);
-      setRecentFiles([]);
-      setTotalPages(1);
+      setAllFiles([]);
+    }
+  };
+
+  const handleRenameTitle = async (fileId: string, newTitle: string) => {
+    if (!user?.user_id || !newTitle.trim()) { setEditingFileId(null); return; }
+    const file = allFiles.find(f => f.fileId === fileId);
+    const currentTitle = file?.sermonTitle || file?.fileName || '';
+    if (newTitle.trim() === currentTitle) { setEditingFileId(null); return; }
+    try {
+      const res = await fetch('/api/sunday-guide/documents', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, unitId: 'default', userId: user.user_id, sermonTitle: newTitle.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAllFiles(prev => prev.map(f => f.fileId === fileId ? { ...f, sermonTitle: data.sermonTitle } : f));
+      } else {
+        alert('更新失敗: ' + (data.error || res.status));
+      }
+    } catch (e: any) {
+      alert('更新時發生錯誤: ' + (e.message || '未知錯誤'));
+    } finally {
+      setEditingFileId(null);
     }
   };
 
   // ---- Initial load ----
   useEffect(() => {
-    fetchAllFileRecords(currentPage);
+    fetchAllFileRecords();
+    fetch('/api/admin/sunday-guide-units')
+      .then(r => r.json())
+      .then(data => { if (data.success) setAllowedUploaders(data.data.units.default.allowedUploaders ?? []); })
+      .catch(() => {});
   }, [user]);
-
-  useEffect(() => {
-    fetchAllFileRecords(currentPage);
-  }, [currentPage]);
 
   useEffect(() => {
     return () => {
@@ -348,7 +373,7 @@ function SundayGuideContent() {
   const handleFileProcessed = async (content: ProcessedContent) => {
     setProcessedContent(content);
     setIsProcessing(false);
-    await fetchAllFileRecords(currentPage);
+    await fetchAllFileRecords();
     await refreshUsage();
   };
 
@@ -365,7 +390,7 @@ function SundayGuideContent() {
       if (!res.ok || !data.success) {
         alert('刪除失敗: ' + (data.error || res.status));
       } else {
-        await fetchAllFileRecords(currentPage);
+        await fetchAllFileRecords();
         if (selectedFileId === fileId) {
           setSelectedFileId(null);
           setSelectedFileName(null);
@@ -747,6 +772,7 @@ function SundayGuideContent() {
           <h4 className={styles.docsSectionTitle}>
             📚 文档列表
             <span className={styles.docsSectionHint}>— 选择一份讲章</span>
+            <span style={{ fontSize: '0.7em', fontWeight: 'normal', color: '#888', marginLeft: '6px' }}>按上传日期↓</span>
           </h4>
 
           {recentFiles.length === 0 ? (
@@ -782,14 +808,42 @@ function SundayGuideContent() {
                     <span className={styles.docIndex}>
                       {(currentPage - 1) * filesPerPage + idx + 1}.
                     </span>
-                    <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                    {editingFileId === file.fileId ? (
+                      <input
+                        className={styles.docTitleInput}
+                        value={editingTitle}
+                        autoFocus
+                        onChange={e => setEditingTitle(e.target.value)}
+                        onBlur={() => handleRenameTitle(file.fileId, editingTitle)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleRenameTitle(file.fileId, editingTitle);
+                          if (e.key === 'Escape') setEditingFileId(null);
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <>
+                        <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                        {user?.user_id && (file.uploaderId?.toString() === user.user_id.toString() || allowedUploaders.includes(user.user_id)) && (
+                          <button
+                            className={styles.editTitleButton}
+                            title="編輯標題"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setEditingTitle(file.sermonTitle || file.fileName);
+                              setEditingFileId(file.fileId);
+                            }}
+                          >✎</button>
+                        )}
+                      </>
+                    )}
                     <span className={styles.docDate}>{file.uploadDate}</span>
                   </li>
                 ))}
               </ul>
 
               {/* Pagination */}
-              {totalPages > 1 && (
+              {allFiles.length > 0 && (
                 <div className={styles.pagination}>
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
