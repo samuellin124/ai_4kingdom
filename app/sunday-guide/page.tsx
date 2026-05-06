@@ -112,7 +112,10 @@ export default function SundayGuide() {
         setCurrentPage(1);
       } else {
         setAllFiles([]);
-      setTotalPages(1);
+      }
+    } catch (error) {
+      console.error('獲取文件記錄失敗:', error);
+      setAllFiles([]);
     }
   };
 
