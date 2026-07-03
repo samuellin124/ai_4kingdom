@@ -1,0 +1,142 @@
+.page {
+  min-height: 100vh;
+  padding: 28px 24px 48px;
+  font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Heiti SC", Arial, sans-serif;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.shell {
+  width: min(880px, 100%);
+  margin: 0 auto;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  color: #1e40af;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 24px;
+  padding: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.icon {
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.body {
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.titleRow h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.featuredBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.breadcrumb {
+  margin: 10px 0 0;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shortTitle {
+  margin: 14px 0 0;
+  color: #1e40af;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.description {
+  margin: 12px 0 0;
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.websiteLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+  padding: 11px 18px;
+  border-radius: 8px;
+  background: #1e40af;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.stateBox {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  padding: 32px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: #fcfdff;
+  text-align: center;
+}
+
+.stateBox strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.stateBox p {
+  margin: 8px 0 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .card {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .icon {
+    margin: 0 auto;
+  }
+
+  .titleRow {
+    justify-content: center;
+  }
+}
