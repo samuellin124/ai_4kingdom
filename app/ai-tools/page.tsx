@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import styles from './page.module.css';
 import type { AiToolRecord, AiToolsCategoryGroup } from '@/app/types/aiTools';
 
@@ -158,37 +159,19 @@ export default function AiToolsDirectoryPage() {
             </div>
           ) : (
             <div className={styles.toolGrid}>
-              {visibleTools.map((tool) => {
-                const cardContent = (
-                  <>
-                    <img className={styles.toolIcon} src={tool.iconUrl} alt={`${tool.name} 图标`} />
-                    <div className={styles.toolBody}>
-                      <div className={styles.toolTitleRow}>
-                        <h3>{tool.name}</h3>
-                        {tool.featured && <span>精选</span>}
-                      </div>
-                      <p className={styles.shortTitle}>{tool.shortTitle}</p>
-                      <p className={styles.description}>{tool.description}</p>
+              {visibleTools.map((tool) => (
+                <Link key={tool.id} className={styles.toolCard} href={`/ai-tools/${tool.id}`}>
+                  <img className={styles.toolIcon} src={tool.iconUrl} alt={`${tool.name} 图标`} />
+                  <div className={styles.toolBody}>
+                    <div className={styles.toolTitleRow}>
+                      <h3>{tool.name}</h3>
+                      {tool.featured && <span>精选</span>}
                     </div>
-                  </>
-                );
-
-                return tool.websiteUrl ? (
-                  <a
-                    key={tool.id}
-                    className={styles.toolCard}
-                    href={tool.websiteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {cardContent}
-                  </a>
-                ) : (
-                  <article key={tool.id} className={styles.toolCard}>
-                    {cardContent}
-                  </article>
-                );
-              })}
+                    <p className={styles.shortTitle}>{tool.shortTitle}</p>
+                    <p className={styles.description}>{tool.description}</p>
+                  </div>
+                </Link>
+              ))}
             </div>
           )}
         </section>

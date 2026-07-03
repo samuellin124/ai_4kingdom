@@ -7,7 +7,7 @@ import {
   GlobalSecondaryIndex,
   KeySchemaElement,
 } from '@aws-sdk/client-dynamodb';
-import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { PERMISSION_GROUPS, UPLOAD_PERMITTED_USERS } from '@/app/config/userPermissions';
 import { createDynamoDBClient, getDynamoDBConfig } from '@/app/utils/dynamodb';
 import type { AiToolRecord, AiToolStatus, AiToolsCategoryGroup } from '@/app/types/aiTools';
@@ -329,4 +329,27 @@ export async function scanAiTools(options: {
   }
 
   return sortAiTools((result.Items || []) as AiToolRecord[]);
+}
+
+export async function getAiToolById(id: string, options: { activeOnly?: boolean } = {}): Promise<AiToolRecord | null> {
+  const client = await createDynamoDBClient();
+
+  let result;
+  try {
+    result = await client.send(
+      new GetCommand({
+        TableName: AI_TOOLS_TABLE,
+        Key: { id },
+      })
+    );
+  } catch (error) {
+    if (isResourceNotFoundError(error)) return null;
+    throw error;
+  }
+
+  const item = (result.Item || null) as AiToolRecord | null;
+  if (!item) return null;
+  if (options.activeOnly && item.status !== 'active') return null;
+
+  return item;
 }
