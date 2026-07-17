@@ -364,7 +364,12 @@ function EastChristHomeContent() {
             </div>
           </div>
           <button className={chatStyles.floatingBubble} onClick={() => { setChatOpen(v => !v); setSidebarOpen(false); }} title="AI 對話助手">
-            <span className={chatStyles.bubbleLabel}>AI</span>
+            <svg className={chatStyles.bubbleIcon} viewBox="0 0 24 24" fill="none">
+              <path d="M6 4H18C19.6569 4 21 5.34315 21 7V14C21 15.6569 19.6569 17 18 17H10.5L6.5 21V17H6C4.34315 17 3 15.6569 3 14V7C3 5.34315 4.34315 4 6 4Z" stroke="#ffffff" strokeWidth="1.6" strokeLinejoin="round" />
+              <line x1="7.5" y1="8.4" x2="16.5" y2="8.4" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="7.5" y1="11" x2="16.5" y2="11" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="7.5" y1="13.6" x2="13" y2="13.6" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
           </button>
         </>
       )}

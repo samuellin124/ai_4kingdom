@@ -9,218 +9,12 @@
   position: relative;
 }
 
-/* ── Left sidebar ── */
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 88px;
-  height: 100vh;
-  background: #c8cdd2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 18px 0 16px;
-  gap: 14px;
-  z-index: 20;
-}
-
-.hamburgerBtn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 8px 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  border-radius: 8px;
-  transition: background 0.15s;
-}
-.hamburgerBtn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.hamburgerLine {
-  display: block;
-  width: 26px;
-  height: 3px;
-  background: #1e3a5f;
-  border-radius: 2px;
-}
-
-.sidebarBox {
-  width: 60px;
-  min-height: 60px;
-  background-color: #ffffff;
-  background-size: cover;
-  background-position: center;
-  border-radius: 12px;
-  border: 1.5px solid #dde2e6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 2px 5px;
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 9px;
-  font-weight: 600;
-  text-align: center;
-  line-height: 1.2;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
-  transition: opacity 0.15s, border-color 0.15s;
-  cursor: pointer;
-  overflow: hidden;
-}
-.sidebarBox:hover {
-  opacity: 0.85;
-  border-color: #b0c4d4;
-}
-
-/* ── Sidebar GPT link (mobile only) ── */
-.sidebarGptMobile {
-  display: none;
-}
-
-/* ── Mobile floating circle toggle (hidden on desktop) ── */
-.mobileSidebarToggle {
-  display: none;
-}
-
-/* ── Mobile sidebar overlay backdrop ── */
-.mobileSidebarOverlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.2);
-  z-index: 90;
-}
-
-.mobileSidebarOverlayVisible {
-  display: block;
-}
-
-.sidebarGptThumb {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 7px;
-  border: 1.5px solid #dde2e6;
-}
-
-.sidebarGptLabel {
-  font-size: 7px;
-  font-weight: 600;
-  color: #1e3a5f;
-  text-align: center;
-  line-height: 1.2;
-}
-
-/* ── Slide-out menu drawer ── */
-.menuOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.25);
-  z-index: 40;
-}
-
-.menuDrawer {
-  position: fixed;
-  top: 0;
-  left: 88px;
-  bottom: 0;
-  width: 260px;
-  background: #ffffff;
-  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.12);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  animation: drawerSlideIn 0.2s ease-out;
-}
-
-@keyframes drawerSlideIn {
-  from { transform: translateX(-20px); opacity: 0; }
-  to   { transform: translateX(0);     opacity: 1; }
-}
-
-.menuHeader {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.menuCloseBtn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: 18px;
-  color: #6b7280;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: color 0.15s;
-}
-.menuCloseBtn:hover {
-  color: #1f2937;
-}
-
-.menuList {
-  list-style: none;
-  margin: 0;
-  padding: 12px 0;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border: none;
-  background: transparent;
-  border-radius: 0;
-}
-
-.menuList li {
-  background-color: transparent;
-  padding: 0;
-}
-
-.menuList li a {
-  display: block;
-  padding: 10px 20px;
-  font-size: 14px;
-  color: #374151;
-  text-decoration: none;
-  border-radius: 6px;
-  margin: 0 8px;
-  transition: background 0.15s;
-}
-.menuList li a:hover {
-  background: #f3f4f6;
-  color: #1f2937;
-}
-
-.menuItemLink {
-  display: flex !important;
-  align-items: center;
-  gap: 10px;
-}
-
-.menuItemThumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
 .routingAgentContainer {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   height: 100vh;
-  margin-left: 88px;
   justify-content: center;
   box-sizing: border-box;
   background: #ffffff;
@@ -369,7 +163,7 @@
   word-wrap: break-word;
   word-break: break-word;
   line-height: 1.5;
-  font-size: 14px;
+  font-size: 16.1px;
   white-space: pre-wrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -384,7 +178,7 @@
 
 .messageBubble :global(pre code) {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 13.8px;
 }
 
 .messageBubble :global(code) {
@@ -392,7 +186,7 @@
   background: rgba(0, 0, 0, 0.05);
   padding: 2px 6px;
   border-radius: 3px;
-  font-size: 13px;
+  font-size: 14.95px;
 }
 
 .loadingDots {
@@ -622,75 +416,9 @@
 }
 
 @media (max-width: 768px) {
-  /* Sidebar floats over content on mobile */
-  .sidebar {
-    width: 72px;
-    padding: 12px 0;
-    gap: 10px;
-    transform: translateX(-100%);
-    transition: transform 0.25s ease-out;
-    z-index: 100;
-  }
-
-  .sidebarMobileOpen {
-    transform: translateX(0);
-  }
-
-  /* .mobileSidebarOverlayVisible activates the always-rendered overlay */
-
-  /* Floating circle FAB toggle for mobile */
-  .mobileSidebarToggle {
-    display: flex;
-    position: fixed;
-    bottom: 24px;
-    left: 20px;
-    z-index: 110;
-    width: 42px;
-    height: 42px;
-    background: #1e3a5f;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    transition: background 0.2s, transform 0.15s;
-  }
-
-  .mobileSidebarToggle:active {
-    transform: scale(0.92);
-  }
-
-  .hamburgerBtn {
-    display: none;
-  }
-
-  .sidebarBox {
-    width: 50px;
-    min-height: 50px;
-    font-size: 7px;
-  }
-
-  .sidebarGptMobile {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    text-decoration: none;
-    padding: 6px 4px;
-    border-radius: 10px;
-    transition: background 0.15s;
-  }
-
-  .sidebarGptMobile:hover {
-    background: rgba(0, 0, 0, 0.08);
-  }
-
-  /* Chat takes full width — sidebar overlays on top */
   .routingAgentContainer {
     height: auto;
     min-height: 100vh;
-    margin-left: 0;
     justify-content: center;
   }
 

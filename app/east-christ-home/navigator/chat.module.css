@@ -26,11 +26,11 @@
   bottom: 28px;
   right: 28px;
   z-index: 1100;
-  width: 58px;
-  height: 58px;
+  width: 67px;
+  height: 67px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.45), 0 2px 8px rgba(0,0,0,0.18);
+  background: linear-gradient(135deg, #f87171 0%, #b91c1c 100%);
+  box-shadow: 0 4px 20px rgba(185, 28, 28, 0.45), 0 2px 8px rgba(0,0,0,0.18);
   border: none;
   cursor: pointer;
   display: flex;
@@ -42,20 +42,17 @@
 
 .floatingBubble:hover {
   transform: scale(1.08);
-  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.55), 0 3px 12px rgba(0,0,0,0.22);
+  box-shadow: 0 6px 28px rgba(185, 28, 28, 0.55), 0 3px 12px rgba(0,0,0,0.22);
 }
 
 .floatingBubble:active {
   transform: scale(0.96);
 }
 
-.bubbleLabel {
-  font-size: 1rem;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: 0.03em;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1;
+.bubbleIcon {
+  width: 33px;
+  height: 33px;
+  display: block;
 }
 
 /* ── Floating chat panel ── */
@@ -185,8 +182,13 @@
   .floatingBubble {
     bottom: 20px;
     right: 20px;
-    width: 52px;
-    height: 52px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .bubbleIcon {
+    width: 30px;
+    height: 30px;
   }
 
   .floatingPanel {
