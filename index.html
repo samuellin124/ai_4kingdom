@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Face Friend Adventure</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="title-card">
+      <h1>Face Friend Adventure</h1>
+      <p class="subtitle">Make a friendly character with your face!</p>
+    </header>
+
+    <!-- Step 1: Upload a photo (stays ONLY in this browser) -->
+    <section class="step-card" id="step-upload" aria-live="polite">
+      <h2>1) Add Your Face</h2>
+      <p class="tiny-text">Photo stays in your device. Nothing is uploaded.</p>
+      <div class="upload-area">
+        <input type="file" id="photoInput" accept="image/png, image/jpeg" />
+        <div class="preview-wrap">
+          <img id="photoPreview" alt="Your photo preview" />
+          <div class="preview-placeholder">Tap to add a photo</div>
+        </div>
+      </div>
+      <div class="button-row">
+        <button class="pill" id="resetPhoto" type="button">Reset Photo</button>
+        <button class="pill primary" id="toCharacter" type="button" disabled>Next</button>
+      </div>
+    </section>
+
+    <!-- Step 2: Choose a character -->
+    <section class="step-card hidden" id="step-character">
+      <h2>2) Choose a Friend</h2>
+      <div class="choice-grid">
+        <button class="choice" data-character="elephant" type="button">
+          <span class="choice-icon">🐘</span>
+          Elephant
+        </button>
+        <button class="choice" data-character="fox" type="button">
+          <span class="choice-icon">🦊</span>
+          Fox
+        </button>
+      </div>
+      <div class="button-row">
+        <button class="pill" id="backToUpload" type="button">Back</button>
+        <button class="pill primary" id="toChoices" type="button" disabled>Next</button>
+      </div>
+    </section>
+
+    <!-- Step 3: Choose personality + world -->
+    <section class="step-card hidden" id="step-choices">
+      <h2>3) Choose the Mood</h2>
+      <div class="choice-grid">
+        <button class="choice" data-personality="happy" type="button">😊 Happy</button>
+        <button class="choice" data-personality="brave" type="button">🛡️ Brave</button>
+        <button class="choice" data-personality="curious" type="button">🔍 Curious</button>
+      </div>
+
+      <h2>4) Choose a World</h2>
+      <div class="choice-grid">
+        <button class="choice" data-world="forest" type="button">🌳 Forest</button>
+        <button class="choice" data-world="castle" type="button">🏰 Castle</button>
+        <button class="choice" data-world="space" type="button">🚀 Space</button>
+      </div>
+
+      <div class="button-row">
+        <button class="pill" id="backToCharacter" type="button">Back</button>
+        <button class="pill primary" id="toResult" type="button" disabled>See Story</button>
+      </div>
+    </section>
+
+    <!-- Step 4: Result -->
+    <section class="step-card hidden" id="step-result">
+      <h2>Your Story Friend</h2>
+      <canvas id="resultCanvas" width="520" height="520" aria-label="Your character"></canvas>
+      <p class="story" id="storyText"></p>
+      <div class="button-row">
+        <button class="pill" id="startOver" type="button">Make Another</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
