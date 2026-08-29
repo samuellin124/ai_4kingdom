@@ -188,7 +188,10 @@ export default function SermonInputTabs({
           ).catch(() => null);
           if (!statusRes) continue; // transient network blip — keep polling
 
-          if (statusRes.status === 404) {
+          // Any 4xx is terminal. 404 means the job expired; Fly's proxy answers 400
+          // when it cannot replay the poll onto the machine that owns the job,
+          // because that machine is gone. Neither gets better by polling again.
+          if (statusRes.status >= 400 && statusRes.status < 500) {
             throw new Error('转录任务已过期或遗失，请重新提交。');
           }
 

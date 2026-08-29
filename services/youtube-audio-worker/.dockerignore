@@ -1,0 +1,19 @@
+# Keep the build context small — it is uploaded to Fly's remote builder on every
+# deploy. The Dockerfile installs dependencies itself (`npm ci`) and compiles src/
+# with tsc, so none of the following is needed at build time.
+#
+# Do NOT add package.json, package-lock.json, tsconfig.json or src/ here:
+# the Dockerfile COPYs each of them.
+
+node_modules
+dist
+
+# Local-only files
+README.md
+.git
+.gitignore
+
+# Never hand secrets or local noise to the builder
+.env
+.env.*
+*.log
