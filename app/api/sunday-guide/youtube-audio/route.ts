@@ -286,23 +286,48 @@ async function discoverInvidiousInstances(): Promise<string[]> {
   return INVIDIOUS_FALLBACK;
 }
 
+/**
+ * 回傳第一個成功的任務結果；只有在全部失敗時才 reject。
+ * 用於彼此獨立的候選來源——逐一嘗試會把每個失敗者的逾時時間累加起來。
+ */
+async function firstSuccessful<T>(tasks: Array<() => Promise<T>>, label: string): Promise<T> {
+  if (tasks.length === 0) throw new Error(`${label}: 沒有可用的候選來源`);
+  return new Promise<T>((resolve, reject) => {
+    let remaining = tasks.length;
+    let settled = false;
+    for (const task of tasks) {
+      task().then(
+        (value) => { if (!settled) { settled = true; resolve(value); } },
+        (err) => {
+          remaining -= 1;
+          if (remaining === 0 && !settled) {
+            reject(new Error(`${label}: ${tasks.length} 個候選全部失敗（最後：${(err as Error)?.message?.slice(0, 80)}）`));
+          }
+        },
+      );
+    }
+  });
+}
+
 // ── Piped 解析 ──────────────────────────────────────────────────
+// 各實例是彼此獨立的輕量 JSON 查詢，因此同時發出並取最快成功者。
+// 舊的逐一嘗試在實例失效時，最多要累積 10 × 8 秒的逾時才會放棄。
 async function resolveViaPiped(videoId: string): Promise<ProxyAudioResult> {
   const instances = await discoverPipedInstances();
-  for (const instance of instances) {
-    try {
+  return firstSuccessful(
+    instances.map((instance) => async (): Promise<ProxyAudioResult> => {
       const res = await fetch(`${instance}/streams/${videoId}`, {
         signal: AbortSignal.timeout(8_000), headers: PROXY_HEADERS,
       });
-      if (!res.ok) { console.warn(`[youtube-audio] Piped ${instance} → ${res.status}`); continue; }
+      if (!res.ok) throw new Error(`${instance} → ${res.status}`);
       const text = await res.text();
-      if (!text || text.length < 2) { console.warn(`[youtube-audio] Piped ${instance} → empty`); continue; }
+      if (!text || text.length < 2) throw new Error(`${instance} → empty`);
       let data: any;
-      try { data = JSON.parse(text); } catch { console.warn(`[youtube-audio] Piped ${instance} → bad JSON`); continue; }
-      if (data.error) { console.warn(`[youtube-audio] Piped ${instance} → ${String(data.error).slice(0, 60)}`); continue; }
+      try { data = JSON.parse(text); } catch { throw new Error(`${instance} → bad JSON`); }
+      if (data.error) throw new Error(`${instance} → ${String(data.error).slice(0, 60)}`);
       const duration: number = data.duration || 0;
       const streams: any[] = (data.audioStreams || []).filter((s: any) => s.url);
-      if (streams.length === 0) { console.warn(`[youtube-audio] Piped ${instance} → no audio streams`); continue; }
+      if (streams.length === 0) throw new Error(`${instance} → no audio streams`);
       streams.sort((a: any, b: any) =>
         Math.abs((a.bitrate ?? 0) - 128_000) - Math.abs((b.bitrate ?? 0) - 128_000)
       );
@@ -311,42 +336,38 @@ async function resolveViaPiped(videoId: string): Promise<ProxyAudioResult> {
       const host = new URL(instance).hostname;
       console.log(`[youtube-audio] Piped ${host} → ${ext} @ ${Math.round((fmt.bitrate ?? 0) / 1000)}kbps, ${Math.round(duration / 60)}min`);
       return { url: fmt.url, ext, duration, source: `Piped(${host})` };
-    } catch (err) {
-      console.warn(`[youtube-audio] Piped ${instance} err:`, (err as Error).message?.slice(0, 60));
-    }
-  }
-  throw new Error('All Piped instances failed');
+    }),
+    'Piped',
+  );
 }
 
 // ── Invidious 解析 ──────────────────────────────────────────────
 async function resolveViaInvidious(videoId: string): Promise<ProxyAudioResult> {
   const instances = await discoverInvidiousInstances();
-  for (const instance of instances) {
-    try {
+  return firstSuccessful(
+    instances.map((instance) => async (): Promise<ProxyAudioResult> => {
       const res = await fetch(`${instance}/api/v1/videos/${videoId}`, {
         signal: AbortSignal.timeout(8_000), headers: PROXY_HEADERS,
       });
-      if (!res.ok) { console.warn(`[youtube-audio] Invidious ${instance} → ${res.status}`); continue; }
+      if (!res.ok) throw new Error(`${instance} → ${res.status}`);
       const text = await res.text();
-      if (!text || text.length < 2) { console.warn(`[youtube-audio] Invidious ${instance} → empty`); continue; }
+      if (!text || text.length < 2) throw new Error(`${instance} → empty`);
       let data: any;
-      try { data = JSON.parse(text); } catch { console.warn(`[youtube-audio] Invidious ${instance} → bad JSON`); continue; }
-      if (data.error) { console.warn(`[youtube-audio] Invidious ${instance} → ${String(data.error).slice(0, 60)}`); continue; }
+      try { data = JSON.parse(text); } catch { throw new Error(`${instance} → bad JSON`); }
+      if (data.error) throw new Error(`${instance} → ${String(data.error).slice(0, 60)}`);
       const duration: number = data.lengthSeconds || 0;
       const formats: any[] = data.adaptiveFormats || [];
       const audioFormats = formats.filter((f) => f.type?.startsWith('audio/') && f.url);
-      if (audioFormats.length === 0) { console.warn(`[youtube-audio] Invidious ${instance} → no audio fmts`); continue; }
+      if (audioFormats.length === 0) throw new Error(`${instance} → no audio fmts`);
       audioFormats.sort((a, b) => Math.abs((a.bitrate ?? 0) - 128_000) - Math.abs((b.bitrate ?? 0) - 128_000));
       const fmt = audioFormats[0];
       const ext = (fmt.type as string).includes('webm') ? 'webm' : 'm4a';
       const host = new URL(instance).hostname;
       console.log(`[youtube-audio] Invidious ${host} → ${ext} @ ${Math.round((fmt.bitrate ?? 0) / 1000)}kbps, ${Math.round(duration / 60)}min`);
       return { url: fmt.url as string, ext, duration, source: `Invidious(${host})` };
-    } catch (err) {
-      console.warn(`[youtube-audio] Invidious ${instance} err:`, (err as Error).message?.slice(0, 60));
-    }
-  }
-  throw new Error('All Invidious instances failed');
+    }),
+    'Invidious',
+  );
 }
 
 // ── Cobalt API 解析（自帶下載代理，不受 IP 限制）─────────────────
@@ -485,21 +506,28 @@ export async function POST(request: Request) {
     await mkdir(chunkDir, { recursive: true });
 
     // ── 音頻下載策略（多代理 + yt-dlp 備案）──────────────────────
-    // 策略層級：Piped (動態) → Invidious (動態) → Cobalt → yt-dlp
-    // 代理方案不受 AWS datacenter IP 封鎖影響
-    const proxyStrategies: Array<{ name: string; fn: () => Promise<ProxyAudioResult> }> = [
-      { name: 'Piped', fn: () => resolveViaPiped(videoId) },
-      { name: 'Invidious', fn: () => resolveViaInvidious(videoId) },
-      { name: 'Cobalt', fn: () => resolveViaCobalt(videoId) },
+    // 三種代理彼此獨立，因此「解析」階段同時發出（都只是輕量 JSON 查詢）；
+    // 舊的逐一嘗試在多數實例失效時，光是累積逾時就可能超過三分鐘才開始下載。
+    // 「下載」階段仍維持逐一嘗試——同時抓取完整音訊會浪費頻寬，也拿不到回退的好處。
+    console.log('[youtube-audio] Resolving via Piped / Invidious / Cobalt in parallel...');
+    const resolveStartedAt = Date.now();
+
+    // 三者立即同時啟動，但仍依偏好順序取用：Piped 先回來就馬上開始下載，
+    // 不必等最慢的那個逾時；若它的下載失敗，其餘通常也已經在背景解析完成。
+    const pending: Array<{ name: string; promise: Promise<ProxyAudioResult> }> = [
+      { name: 'Piped', promise: resolveViaPiped(videoId) },
+      { name: 'Invidious', promise: resolveViaInvidious(videoId) },
+      { name: 'Cobalt', promise: resolveViaCobalt(videoId) },
     ];
+    // 先掛上 no-op catch：提早成功時未被 await 的那幾個才不會變成 unhandled rejection。
+    pending.forEach(({ promise }) => { promise.catch(() => {}); });
 
     let downloaded = false;
-    for (const { name, fn } of proxyStrategies) {
+    for (const { name, promise } of pending) {
       if (downloaded) break;
       try {
-        console.log(`[youtube-audio] Trying ${name}...`);
-        const proxy = await fn();
-
+        const proxy = await promise;
+        console.log(`[youtube-audio] ${name} resolved after ${((Date.now() - resolveStartedAt) / 1000).toFixed(1)}s`);
         // 時長檢查（由代理 API 直接回傳，免除 yt-dlp --dump-json）
         if (proxy.duration > 0) {
           console.log(`[youtube-audio] Duration: ${Math.round(proxy.duration / 60)} min (${proxy.source})`);

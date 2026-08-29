@@ -155,7 +155,68 @@ export default function SermonInputTabs({
       }
     };
 
-    // First try via Next API route (keeps existing auth/infra path)
+    // Preferred path: start an async job on the worker and poll it.
+    // The synchronous route cannot outlive API Gateway's hard 29s cap, and when it is
+    // cut off the worker keeps transcribing a request nobody is listening to — so the
+    // client pays for the same video twice. Polling removes both problems.
+    if (publicWorkerUrl) {
+      const startRes = await fetch(`${publicWorkerUrl}/api/youtube-audio/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+
+      // A 404 means the deployed worker predates the job API; fall through to the
+      // synchronous path so a frontend release can ship before the worker one.
+      if (startRes && startRes.status !== 404) {
+        const startData = await tryParseJson(startRes);
+        if (!startRes.ok || !startData.jobId) {
+          throw new Error(
+            startData.message || startData.error || `启动转录任务失败（HTTP ${startRes.status}）`
+          );
+        }
+
+        const POLL_MS = 4000;
+        const MAX_POLLS = 225; // ~15 分鐘
+        const startedAt = Date.now();
+
+        for (let i = 0; i < MAX_POLLS; i++) {
+          await new Promise((r) => setTimeout(r, POLL_MS));
+
+          const statusRes = await fetch(
+            `${publicWorkerUrl}/api/youtube-audio/status/${startData.jobId}`
+          ).catch(() => null);
+          if (!statusRes) continue; // transient network blip — keep polling
+
+          if (statusRes.status === 404) {
+            throw new Error('转录任务已过期或遗失，请重新提交。');
+          }
+
+          const statusData = await tryParseJson(statusRes);
+          if (statusData.status !== 'done') {
+            const mins = Math.floor((Date.now() - startedAt) / 60000);
+            const secs = Math.floor(((Date.now() - startedAt) % 60000) / 1000);
+            setYtTranscription({
+              status: 'loading',
+              message: `正在转录音频...（已进行 ${mins}:${String(secs).padStart(2, '0')}）`,
+            });
+            continue;
+          }
+
+          const result = statusData.result || {};
+          if (statusData.httpStatus !== 200 || !result.transcript) {
+            throw new Error(
+              result.message || result.error || `音频转录失败（HTTP ${statusData.httpStatus}）`
+            );
+          }
+          return result;
+        }
+
+        throw new Error('转录逾时，请稍后再试，或使用「指定转录片段」缩短影片长度。');
+      }
+    }
+
+    // Fallback: synchronous route via the Next API (short videos, or an old worker)
     const apiRes = await fetch('/api/sunday-guide/youtube-audio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
