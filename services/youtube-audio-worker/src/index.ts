@@ -13,6 +13,7 @@ import {
 import { existsSync, statSync, chmodSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
+import { randomUUID } from 'crypto';
 import OpenAI from 'openai';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
@@ -121,7 +122,9 @@ const WHISPER_MAX_BYTES = 24 * 1024 * 1024;
 const WHISPER_MAX_DURATION_SEC = 600; // 10 min per chunk — smaller = faster upload = less ECONNRESET
 const CHUNK_DURATION_SEC = 10 * 60;
 const MAX_VIDEO_DURATION_SEC = 180 * 60;
-const WHISPER_CONCURRENCY = 3;
+// Parallel Whisper uploads per batch. Override with the WHISPER_CONCURRENCY env var:
+// drop to 2, or 1 (fully sequential, the old behaviour) if ECONNRESET reappears.
+const WHISPER_CONCURRENCY = Math.max(1, Number(process.env.WHISPER_CONCURRENCY) || 3);
 const COOKIES_PATH = join(os.tmpdir(), 'yt-cookies.txt');
 
 // Write YouTube cookies from env var (base64 encoded to avoid multiline issues)
@@ -430,7 +433,10 @@ async function transcribeFile(filePath: string, ext: string): Promise<string> {
   throw lastErr;
 }
 
-// Sequential Whisper transcription (avoids parallel ECONNRESET under load)
+// Whisper transcription with bounded concurrency.
+// Each batch runs in parallel; WHISPER_CONCURRENCY caps simultaneous uploads so we
+// don't retrigger the ECONNRESET that unbounded parallelism caused. Lower it via the
+// WHISPER_CONCURRENCY env var (2, or 1 for fully sequential) if ECONNRESET reappears.
 async function transcribeChunksParallel(
   chunks: string[], defaultExt: string,
 ): Promise<string[]> {
@@ -439,11 +445,18 @@ async function transcribeChunksParallel(
     const batch = chunks.slice(i, i + WHISPER_CONCURRENCY)
       .filter((c) => statSync(c).size <= WHISPER_MAX_BYTES);
     if (!batch.length) continue;
-    console.log(`[worker] Transcribing chunks ${i + 1}–${Math.min(i + WHISPER_CONCURRENCY, chunks.length)}/${chunks.length}...`);
-    // Sequential within each batch to avoid concurrent large uploads triggering ECONNRESET
-    for (const c of batch) {
-      const chunkExt = c.split('.').pop()?.toLowerCase() || defaultExt;
-      const text = await transcribeFile(c, chunkExt);
+    const from = i + 1;
+    const to = Math.min(i + WHISPER_CONCURRENCY, chunks.length);
+    console.log(`[worker] Transcribing chunks ${from}–${to}/${chunks.length} (${batch.length} in parallel)...`);
+    const startedAt = Date.now();
+
+    // Promise.all resolves in input order, so parts stay in chunk order.
+    const texts = await Promise.all(
+      batch.map((c) => transcribeFile(c, c.split('.').pop()?.toLowerCase() || defaultExt)),
+    );
+
+    console.log(`[worker] Chunks ${from}–${to} done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+    for (const text of texts) {
       if (text.trim()) parts.push(text.trim());
     }
   }
@@ -451,39 +464,63 @@ async function transcribeChunksParallel(
 }
 
 // GPT formatting
+// Chunk size stays well under gpt-4o's 16k output cap: ~6000 Chinese chars reformats
+// to roughly the same length, so a reply can never be truncated mid-transcript.
+const FORMAT_CHUNK_CHARS = Math.max(1000, Number(process.env.FORMAT_CHUNK_CHARS) || 6000);
+const FORMAT_CONCURRENCY = Math.max(1, Number(process.env.FORMAT_CONCURRENCY) || 4);
+
+const FORMAT_SYSTEM_PROMPT = [
+  'You are a transcript editor. Format the following speech transcript:',
+  '1. Fix punctuation and sentence boundaries only',
+  '2. Do NOT remove any words, phrases, or content — preserve everything',
+  '3. Do NOT summarize, shorten, or paraphrase',
+  '4. Preserve repeated phrases, prayers, and emphasis (e.g. "阿們", "讚美主")',
+  '5. Preserve the original language exactly (Chinese stays Chinese, English stays English)',
+  'Return only the reformatted transcript, no commentary.',
+].join('\n');
+
+// Formats one chunk, falling back to the raw chunk on failure or on a suspiciously
+// short reply. A truncated or summarised reply would silently drop sermon content,
+// which matters far more here than perfect punctuation.
+async function formatChunk(chunk: string): Promise<string> {
+  try {
+    const completion = await getOpenAI().chat.completions.create({
+      model: 'gpt-4o', temperature: 0,
+      messages: [
+        { role: 'system', content: FORMAT_SYSTEM_PROMPT },
+        { role: 'user', content: chunk },
+      ],
+      max_tokens: 16384,
+    });
+    const formatted = completion.choices[0]?.message?.content?.trim();
+    if (!formatted) return chunk;
+    if (formatted.length < chunk.length * 0.6) {
+      console.warn(`[worker] Formatted chunk suspiciously short (${formatted.length} vs ${chunk.length} chars), keeping raw`);
+      return chunk;
+    }
+    return formatted;
+  } catch (err) {
+    console.warn('[worker] Formatting failed for one chunk, keeping raw:', (err as Error)?.message?.slice(0, 120));
+    return chunk;
+  }
+}
+
 async function formatTranscript(rawText: string): Promise<string> {
   if (!rawText || rawText.trim().length < 50) return rawText.trim();
-  try {
-    const CHUNK_SIZE = 2000;
-    const chunks = splitText(rawText.trim(), CHUNK_SIZE);
-    const parts: string[] = [];
-    for (const chunk of chunks) {
-      const completion = await getOpenAI().chat.completions.create({
-        model: 'gpt-4o', temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: [
-              'You are a transcript editor. Format the following speech transcript:',
-              '1. Fix punctuation and sentence boundaries only',
-              '2. Do NOT remove any words, phrases, or content — preserve everything',
-              '3. Do NOT summarize, shorten, or paraphrase',
-              '4. Preserve repeated phrases, prayers, and emphasis (e.g. "阿們", "讚美主")',
-              '5. Preserve the original language exactly (Chinese stays Chinese, English stays English)',
-              'Return only the reformatted transcript, no commentary.',
-            ].join('\n'),
-          },
-          { role: 'user', content: chunk },
-        ],
-        max_tokens: 16384,
-      });
-      parts.push(completion.choices[0]?.message?.content?.trim() ?? chunk);
-    }
-    return parts.join('\n\n');
-  } catch (err) {
-    console.warn('[worker] GPT formatting failed:', err);
-    return rawText.trim();
+  const chunks = splitText(rawText.trim(), FORMAT_CHUNK_CHARS);
+  console.log(`[worker] Formatting ${chunks.length} chunk(s), ${FORMAT_CONCURRENCY} in parallel...`);
+  const startedAt = Date.now();
+
+  const parts: string[] = [];
+  for (let i = 0; i < chunks.length; i += FORMAT_CONCURRENCY) {
+    const batch = chunks.slice(i, i + FORMAT_CONCURRENCY);
+    // Promise.all resolves in input order, so the transcript stays in order.
+    // formatChunk never rejects, so one bad chunk can't discard the whole transcript.
+    parts.push(...await Promise.all(batch.map(formatChunk)));
   }
+
+  console.log(`[worker] Formatting done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+  return parts.join('\n\n');
 }
 
 function splitText(text: string, maxChars: number): string[] {
@@ -570,7 +607,66 @@ app.post('/api/audio-transcribe',
     }
   });
 
-app.post('/api/youtube-audio', authMiddleware, async (req: express.Request, res: express.Response) => {
+// ── Async job store ──────────────────────────────────────────────────────────
+// Callers behind AWS Amplify hit API Gateway's hard 29s request cap, so a long
+// transcription can never finish synchronously. They POST /start, then poll /status.
+// Jobs are held in memory: they are short-lived and fly.toml pins
+// min_machines_running = 1. Running more than one machine would need a shared store
+// (or sticky routing), otherwise a poll can land on a machine that lacks the job.
+type JobState =
+  | { status: 'running'; startedAt: number }
+  | { status: 'done'; httpStatus: number; body: any; finishedAt: number };
+
+const jobs = new Map<string, JobState>();
+const JOB_TTL_MS = 60 * 60_000;          // keep finished results readable for an hour
+const JOB_MAX_RUNTIME_MS = 30 * 60_000;  // safety net if a handler never settles
+
+// A job lives on the machine that started it, so the id carries that machine:
+//   <machine id>.<uuid>
+// Any machine can then read the owner straight off an incoming poll and hand it to
+// Fly's proxy. The id stays opaque to the client, so no frontend change is needed.
+const MACHINE_ID = process.env.FLY_MACHINE_ID || 'local';
+
+function newJobId(): string {
+  return `${MACHINE_ID}.${randomUUID()}`;
+}
+
+function jobOwner(jobId: string): string | null {
+  const dot = jobId.indexOf('.');
+  return dot > 0 ? jobId.slice(0, dot) : null;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of jobs) {
+    if (job.status === 'done') {
+      if (now - job.finishedAt > JOB_TTL_MS) jobs.delete(id);
+    } else if (now - job.startedAt > JOB_MAX_RUNTIME_MS) {
+      console.warn(`[worker] Job ${id} exceeded max runtime, marking failed`);
+      jobs.set(id, {
+        status: 'done', httpStatus: 504, finishedAt: now,
+        body: { error: 'JOB_TIMEOUT', message: 'Transcription exceeded the maximum runtime' },
+      });
+    }
+  }
+}, 5 * 60_000).unref();
+
+/** Collects what the handler writes to `res` instead of sending it to a client. */
+function createResponseCapture(): {
+  res: express.Response;
+  settled: Promise<{ httpStatus: number; body: any }>;
+} {
+  let resolve!: (v: { httpStatus: number; body: any }) => void;
+  const settled = new Promise<{ httpStatus: number; body: any }>((r) => { resolve = r; });
+  let httpStatus = 200;
+  const res = {
+    status(code: number) { httpStatus = code; return res; },
+    json(body: any) { resolve({ httpStatus, body }); return res; },
+  } as unknown as express.Response;
+  return { res, settled };
+}
+
+const handleYouTubeAudio = async (req: express.Request, res: express.Response): Promise<void> => {
   const tmpDir = join(os.tmpdir(), `yt-audio-${Date.now()}`);
   const chunkDir = join(tmpDir, 'chunks');
 
@@ -786,6 +882,60 @@ app.post('/api/youtube-audio', authMiddleware, async (req: express.Request, res:
       if (existsSync(tmpDir)) await rm(tmpDir, { recursive: true, force: true });
     } catch { /* ignore */ }
   }
+};
+
+// Synchronous route — kept for short videos and for callers that predate /start.
+app.post('/api/youtube-audio', authMiddleware, handleYouTubeAudio);
+
+// Start a transcription job and return immediately; the client polls /status/:jobId.
+app.post('/api/youtube-audio/start', authMiddleware, (req: express.Request, res: express.Response) => {
+  const jobId = newJobId();
+  jobs.set(jobId, { status: 'running', startedAt: Date.now() });
+  console.log(`[worker] Job ${jobId} started`);
+  res.status(202).json({ jobId });
+
+  const capture = createResponseCapture();
+
+  handleYouTubeAudio(req, capture.res).catch((err: any) => {
+    // Only record this if the handler never produced a response of its own.
+    if (jobs.get(jobId)?.status !== 'running') return;
+    console.error(`[worker] Job ${jobId} threw:`, err);
+    jobs.set(jobId, {
+      status: 'done', httpStatus: 500, finishedAt: Date.now(),
+      body: { error: 'TRANSCRIPTION_FAILED', message: err?.message || 'Unknown error' },
+    });
+  });
+
+  capture.settled.then(({ httpStatus, body }) => {
+    console.log(`[worker] Job ${jobId} finished with HTTP ${httpStatus}`);
+    jobs.set(jobId, { status: 'done', httpStatus, body, finishedAt: Date.now() });
+  });
+});
+
+app.get('/api/youtube-audio/status/:jobId', authMiddleware, (req: express.Request, res: express.Response) => {
+  const jobId = String(req.params.jobId ?? '');
+  const job = jobs.get(jobId);
+  if (!job) {
+    const owner = jobOwner(jobId);
+    // The poll landed on a machine that does not own this job. Hand it to Fly's proxy,
+    // which re-runs the request on the owning machine — transparent to the client.
+    // `fly-replay-src` marks a request Fly already replayed once; never bounce it
+    // again, or a dead owner would loop the request forever.
+    if (owner && owner !== MACHINE_ID && !req.headers['fly-replay-src']) {
+      console.log(`[worker] Replaying poll for ${jobId} → machine ${owner}`);
+      res.setHeader('fly-replay', `instance=${owner}`);
+      res.status(204).end();
+      return;
+    }
+    // Expired, or the owning machine is gone — the client must restart the job.
+    res.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found or expired' });
+    return;
+  }
+  if (job.status === 'running') {
+    res.json({ status: 'running', elapsedMs: Date.now() - job.startedAt });
+    return;
+  }
+  res.json({ status: 'done', httpStatus: job.httpStatus, result: job.body });
 });
 
 // Health check
