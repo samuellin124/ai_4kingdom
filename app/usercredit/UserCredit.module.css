@@ -26,8 +26,9 @@
   border-radius: 2px;
 }
 
-/* 信用額度區塊統一樣式 */
-.creditBlock {
+/* 卡片共用外觀 */
+.usageCard,
+.infoCard {
   background-color: white;
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -35,72 +36,223 @@
   margin-bottom: 1.5rem;
 }
 
-/* 用戶資訊樣式 */
-.userInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.userInfo > div {
+/* === 本月用量百分比 === */
+.usageHeader {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 
-.label {
-  font-weight: 500;
-  color: #4a5568;
-  min-width: 85px;
-}
-
-.value {
+.usageTitle {
+  margin: 0;
+  font-size: 1.1rem;
   font-weight: 600;
   color: #2d3748;
 }
 
-/* 進度條區塊樣式 */
-.progressBarSection {
-  margin-top: 1.5rem;
-  width: 100%;
-  padding: 0.5rem 0;
+.planBadge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background-color: #edf2f7;
+  color: #4a5568;
 }
 
-/* 剩餘 Credits 顯示 */
-.creditDisplay {
-  margin-top: 1.5rem;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 1.5rem;
-  display: flex;
-  justify-content: center;
+.plan_free {
+  background-color: #edf2f7;
+  color: #4a5568;
 }
 
-.remainingCredits {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1.5rem 2.5rem;
+.plan_pro {
   background-color: #ebf8ff;
-  border-radius: 10px;
-  border: 1px solid #bee3f8;
+  color: #2b6cb0;
 }
 
-.creditValue {
+.plan_ultimate {
+  background-color: #faf5ff;
+  color: #6b46c1;
+}
+
+/* 百分比主體數字 */
+.percentBlock {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.percentValue {
   font-size: 3rem;
   font-weight: 700;
-  color: #2b6cb0;
-  line-height: 1.2;
+  line-height: 1;
+  color: #38a169;
 }
 
-.creditLabel {
-  font-size: 1rem;
+.percentLabel {
+  font-size: 0.95rem;
+  color: #718096;
+}
+
+/* 進度條 */
+.progressContainer {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  background-color: #e2e8f0;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  background-color: #48bb78;
+  border-radius: 7px;
+  transition: width 0.4s ease;
+}
+
+/* 用量偏高／接近上限的顏色狀態 */
+.progressBar.warning {
+  background-color: #ed8936;
+}
+
+.progressBar.danger {
+  background-color: #e53e3e;
+}
+
+.percentValue.warning {
+  color: #dd6b20;
+}
+
+.percentValue.danger {
+  color: #e53e3e;
+}
+
+.tokenInfo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
   color: #4a5568;
-  margin-top: 0.5rem;
+}
+
+.lastUpdated {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #a0aec0;
+}
+
+/* === 額度用盡：升級提醒 === */
+.upgradeCard {
+  background-color: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-left: 4px solid #dd6b20;
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.upgradeTitle {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #7b341e;
+}
+
+.upgradeText {
+  margin: 0;
+  color: #744210;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.upgradeButton {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.6rem 1.5rem;
+  background-color: #dd6b20;
+  color: white;
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.upgradeButton:hover {
+  background-color: #c05621;
+}
+
+/* === 接近上限：溫和提示 === */
+.noticeCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background-color: #ebf8ff;
+  border-left: 4px solid #4299e1;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.noticeText {
+  margin: 0;
+  color: #2c5282;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.noticeLink {
+  color: #2b6cb0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.noticeLink:hover {
+  text-decoration: underline;
+}
+
+/* === 帳戶資訊 === */
+.infoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #edf2f7;
+  color: #4a5568;
+}
+
+.infoRow:last-child {
+  border-bottom: none;
+}
+
+.infoRow > span:last-child {
+  font-weight: 600;
+  color: #2d3748;
+  text-align: right;
+  word-break: break-all;
+}
+
+.plan {
+  color: #2b6cb0;
+}
+
+.credits {
+  color: #2b6cb0;
+  font-size: 1.15rem;
 }
 
 /* 重置提示訊息 */
-.resetReminder {
-  margin-top: 1.5rem;
+.creditsExplanation {
   text-align: center;
   padding: 1rem;
   background-color: #f7fafc;
@@ -111,8 +263,14 @@
   border-left: 4px solid #4299e1;
 }
 
+.creditsExplanation p {
+  margin: 0;
+}
+
 /* 加載和錯誤狀態樣式 */
 .loading, .loginPrompt, .error {
+  max-width: 800px;
+  margin: 2rem auto;
   text-align: center;
   padding: 3rem 1.5rem;
   background-color: white;
@@ -133,66 +291,38 @@
   border-left: 4px solid #e53e3e;
 }
 
-/* 刷新按鈕區塊樣式 */
-.refreshSection {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.refreshButton {
-  padding: 0.5rem 1.5rem;
-  background-color: #4299e1;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.refreshButton:hover {
-  background-color: #3182ce;
-}
-
-.refreshButton:disabled {
-  background-color: #a0aec0;
-  cursor: not-allowed;
-}
-
-.lastRefresh {
-  font-size: 0.85rem;
-  color: #718096;
-}
-
 /* 響應式設計 */
 @media (max-width: 768px) {
   .container {
     margin: 1rem;
     padding: 1rem;
   }
-  
-  .creditBlock {
+
+  .usageCard,
+  .infoCard {
     padding: 1.5rem;
   }
-  
-  .creditValue {
+
+  .percentValue {
     font-size: 2.5rem;
   }
-  
+
   .title {
     font-size: 1.5rem;
   }
-  
-  .userInfo > div {
+
+  .tokenInfo {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .infoRow {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
   }
-  
-  .label {
-    min-width: unset;
+
+  .infoRow > span:last-child {
+    text-align: left;
   }
 }
