@@ -117,15 +117,15 @@ export default function UserCreditPage() {
   };
 
   if (loading || authLoading) {
-    return <div className={styles.loading}>載入中，請稍候...</div>;
+    return <div className={styles.page}><div className={styles.loading}>載入中，請稍候...</div></div>;
   }
 
   if (!user) {
-    return <div className={styles.error}>請先登入</div>;
+    return <div className={styles.page}><div className={styles.error}>請先登入</div></div>;
   }
 
   if (error) {
-    return <div className={styles.error}>錯誤: {error}</div>;
+    return <div className={styles.page}><div className={styles.error}>錯誤: {error}</div></div>;
   }
 
   const subscriptionType = user.subscription?.type || 'free';
@@ -160,115 +160,115 @@ export default function UserCreditPage() {
       : '';
 
   return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>用户额度管理</h1>
+    <div className={styles.page}>
+      <div className={styles.container}>
+        {/* 本月用量百分比 */}
+        <div className={styles.usageCard}>
+          <div className={styles.usageHeader}>
+            <h3 className={styles.usageTitle}>本月 Token 用量</h3>
+            <span className={`${styles.planBadge} ${styles[`plan_${subscriptionType}`]}`}>
+              {subscriptionName}
+            </span>
+          </div>
 
-      {/* 本月用量百分比 */}
-      <div className={styles.usageCard}>
-        <div className={styles.usageHeader}>
-          <h3 className={styles.usageTitle}>本月 Token 用量</h3>
-          <span className={`${styles.planBadge} ${styles[`plan_${subscriptionType}`]}`}>
-            {subscriptionName}
-          </span>
-        </div>
+          <div className={styles.percentBlock}>
+            <span className={`${styles.percentValue} ${barLevel}`}>{percentUsed}%</span>
+            <span className={styles.percentLabel}>已使用（尚余 {percentRemaining}%）</span>
+          </div>
 
-        <div className={styles.percentBlock}>
-          <span className={`${styles.percentValue} ${barLevel}`}>{percentUsed}%</span>
-          <span className={styles.percentLabel}>已使用（尚余 {percentRemaining}%）</span>
-        </div>
-
-        <div
-          className={styles.progressContainer}
-          role="progressbar"
-          aria-valuenow={percentUsed}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="本月 Token 用量百分比"
-        >
           <div
-            className={`${styles.progressBar} ${barLevel}`}
-            style={{ width: `${percentUsed}%` }}
-          />
+            className={styles.progressContainer}
+            role="progressbar"
+            aria-valuenow={percentUsed}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="本月 Token 用量百分比"
+          >
+            <div
+              className={`${styles.progressBar} ${barLevel}`}
+              style={{ width: `${percentUsed}%` }}
+            />
+          </div>
+
+          <div className={styles.tokenInfo}>
+            <span>{usedTokens.toLocaleString()} / {tokenLimit.toLocaleString()} tokens</span>
+            <span>{usedCredits.toLocaleString()} / {totalCredits.toLocaleString()} credits</span>
+          </div>
+
+          <div className={styles.lastUpdated}>
+            更新时间：{new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })}
+          </div>
         </div>
 
-        <div className={styles.tokenInfo}>
-          <span>{usedTokens.toLocaleString()} / {tokenLimit.toLocaleString()} tokens</span>
-          <span>{usedCredits.toLocaleString()} / {totalCredits.toLocaleString()} credits</span>
+        {/* 額度用盡：溫和提醒升級 */}
+        {isExhausted && (
+          <div className={styles.upgradeCard}>
+            <h3 className={styles.upgradeTitle}>
+              {isFreePlan
+                ? '感谢您使用 AI4Kingdom！本月免费额度已用完'
+                : '本月额度已用完'}
+            </h3>
+            <p className={styles.upgradeText}>
+              {isFreePlan
+                ? `您的 Free 方案每月 ${totalCredits.toLocaleString()} credits 已全部使用。额度会在下月 1 日自动重置；若希望现在继续使用，欢迎升级方案，立即取得更多 credits 并解锁进阶功能。`
+                : `您的 ${subscriptionName} 方案每月 ${totalCredits.toLocaleString()} credits 已全部使用，额度将于下月 1 日自动重置。`}
+            </p>
+            {canUpgrade && (
+              <a
+                className={styles.upgradeButton}
+                href={PRICING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                查看方案与升级
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* 接近上限：提前預告 */}
+        {isNearLimit && (
+          <div className={styles.noticeCard}>
+            <p className={styles.noticeText}>
+              您本月额度已使用 {percentUsed}%，仅剩 {remainingCredits.toLocaleString()} credits。
+              {canUpgrade && ' 如需更多用量，可随时升级方案。'}
+            </p>
+            {canUpgrade && (
+              <a
+                className={styles.noticeLink}
+                href={PRICING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                查看方案 →
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* 帳戶資訊 */}
+        <div className={styles.infoCard}>
+          <div className={styles.infoRow}>
+            <span>用户ID:</span>
+            <span>{user.user_id}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span>方案:</span>
+            <span className={styles.plan}>{subscriptionName}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span>到期时间:</span>
+            <span>{formatExpiryDate()}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span>剩余Credits:</span>
+            <span className={styles.credits}>{remainingCredits.toLocaleString()}</span>
+          </div>
         </div>
 
-        <div className={styles.lastUpdated}>
-          更新时间：{new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })}
+        <div className={styles.creditsExplanation}>
+          <p>每月额度将在每月1日重置，未使用的额度不会累计到下个月。</p>
         </div>
-      </div>
-
-      {/* 額度用盡：溫和提醒升級 */}
-      {isExhausted && (
-        <div className={styles.upgradeCard}>
-          <h3 className={styles.upgradeTitle}>
-            {isFreePlan
-              ? '感谢您使用 AI4Kingdom！本月免费额度已用完'
-              : '本月额度已用完'}
-          </h3>
-          <p className={styles.upgradeText}>
-            {isFreePlan
-              ? `您的 Free 方案每月 ${totalCredits.toLocaleString()} credits 已全部使用。额度会在下月 1 日自动重置；若希望现在继续使用，欢迎升级方案，立即取得更多 credits 并解锁进阶功能。`
-              : `您的 ${subscriptionName} 方案每月 ${totalCredits.toLocaleString()} credits 已全部使用，额度将于下月 1 日自动重置。`}
-          </p>
-          {canUpgrade && (
-            <a
-              className={styles.upgradeButton}
-              href={PRICING_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              查看方案与升级
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* 接近上限：提前預告 */}
-      {isNearLimit && (
-        <div className={styles.noticeCard}>
-          <p className={styles.noticeText}>
-            您本月额度已使用 {percentUsed}%，仅剩 {remainingCredits.toLocaleString()} credits。
-            {canUpgrade && ' 如需更多用量，可随时升级方案。'}
-          </p>
-          {canUpgrade && (
-            <a
-              className={styles.noticeLink}
-              href={PRICING_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              查看方案 →
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* 帳戶資訊 */}
-      <div className={styles.infoCard}>
-        <div className={styles.infoRow}>
-          <span>用户ID:</span>
-          <span>{user.user_id}</span>
-        </div>
-        <div className={styles.infoRow}>
-          <span>方案:</span>
-          <span className={styles.plan}>{subscriptionName}</span>
-        </div>
-        <div className={styles.infoRow}>
-          <span>到期时间:</span>
-          <span>{formatExpiryDate()}</span>
-        </div>
-        <div className={styles.infoRow}>
-          <span>剩余Credits:</span>
-          <span className={styles.credits}>{remainingCredits.toLocaleString()}</span>
-        </div>
-      </div>
-
-      <div className={styles.creditsExplanation}>
-        <p>每月额度将在每月1日重置，未使用的额度不会累计到下个月。</p>
       </div>
     </div>
   );
