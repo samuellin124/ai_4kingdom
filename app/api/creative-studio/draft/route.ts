@@ -189,8 +189,10 @@ export async function POST(request: Request) {
 
     const openai = new OpenAI({ apiKey });
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.5,
+      model: 'gpt-5.6-terra',
+      // gpt-5.6-terra 為推理模型：不支援 temperature；限制推理+輸出總量避免過度膨脹。
+      reasoning_effort: 'low',
+      max_completion_tokens: 8000,
       response_format: { type: 'json_object' },
       messages: [
         {

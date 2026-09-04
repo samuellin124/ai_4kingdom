@@ -17,7 +17,7 @@ export class AssistantNotFoundError extends Error {
   }
 }
 
-export const DEFAULT_MODEL = process.env.OPENAI_RESPONSES_MODEL || 'gpt-4o';
+export const DEFAULT_MODEL = process.env.OPENAI_RESPONSES_MODEL || 'gpt-5.6-terra';
 
 // 每個 server instance 的記憶體快取，避免每則訊息都往返一次 assistants.retrieve
 const profileCache = new Map<string, { profile: AssistantProfile; expiresAt: number }>();
