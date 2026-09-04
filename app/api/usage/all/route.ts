@@ -14,7 +14,11 @@ async function getUserSubscription(userId: string): Promise<Subscription> {
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          // 伺服器對伺服器查詢他人方案需帶 service token，WP 端才會受理 userId。
+          ...(process.env.WP_SERVICE_TOKEN
+            ? { 'X-A4K-Service-Token': process.env.WP_SERVICE_TOKEN }
+            : {})
         },
         body: JSON.stringify({ userId })
       }
