@@ -3,16 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import styles from './UserCredit.module.css';
-
-// 定義每個用戶類型的 token 額度
-const TOKEN_LIMITS = {
-  free: 100000,     // 100 credits
-  pro: 1000000,     // 1,000 credits
-  ultimate: 5000000 // 5,000 credits
-};
-
-// Token 轉換為 Credit 的比率
-const TOKEN_TO_CREDIT_RATIO = 1000; // 1000 tokens = 1 credit
+import { TOKEN_LIMITS, TOKEN_TO_CREDIT_RATIO } from '../config/plans';
 
 // 用量達到這些百分比時，提前提醒用戶
 const WARNING_THRESHOLD = 80;

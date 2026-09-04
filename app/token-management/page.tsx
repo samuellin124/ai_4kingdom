@@ -3,16 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import styles from './TokenManagement.module.css';
-
-// Token 轉換為 Credit 的比率
-const TOKEN_TO_CREDIT_RATIO = 1000; // 1000 tokens = 1 credit
-
-// 定義每個用戶類型的 token 額度
-const TOKEN_LIMITS = {
-  free: 100000,     // 100 credits
-  pro: 1000000,     // 1,000 credits
-  ultimate: 5000000 // 5,000 credits
-};
+import { TOKEN_LIMITS, TOKEN_TO_CREDIT_RATIO } from '../config/plans';
 
 interface UserUsage {
   userId: string;
