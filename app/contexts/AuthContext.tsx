@@ -4,6 +4,44 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { FEATURE_ACCESS } from '../types/auth';
 import { canUserUpload } from '../config/userPermissions';
 import type { UserData, AuthState, AuthContextType, FeatureKey, MemberRole } from '../types/auth';
+import type { Subscription } from '../types/auth';
+
+const FREE_SUBSCRIPTION: Subscription = {
+  status: 'active',
+  type: 'free',
+  expiry: null,
+  plan_id: null,
+  roles: ['free_member'],
+};
+
+const VALID_TYPES = ['free', 'pro', 'ultimate'] as const;
+
+/**
+ * 把 WP 端回傳的 subscription 正規化。
+ * 端點壞掉或欄位缺漏時退回 free，但會留下 warning —— 先前這裡是無聲寫死成 free，
+ * 導致付費會員長期拿到免費額度卻沒有任何徵兆。
+ */
+function normalizeSubscription(raw: unknown): Subscription {
+  if (!raw || typeof raw !== 'object') {
+    console.warn('[WARN] session 未回傳 subscription，暫以免費方案處理');
+    return FREE_SUBSCRIPTION;
+  }
+
+  const s = raw as Partial<Subscription>;
+  const type = VALID_TYPES.includes(s.type as never) ? (s.type as Subscription['type']) : 'free';
+
+  if (s.type && type !== s.type) {
+    console.warn(`[WARN] 未知的方案型別 "${s.type}"，暫以免費方案處理`);
+  }
+
+  return {
+    status: s.status === 'inactive' ? 'inactive' : 'active',
+    type,
+    expiry: s.expiry ?? null,
+    plan_id: s.plan_id ?? null,
+    roles: Array.isArray(s.roles) && s.roles.length > 0 ? (s.roles as MemberRole[]) : [`${type}_member` as MemberRole],
+  };
+}
 
 interface User {
   user_id: string;
@@ -12,13 +50,8 @@ interface User {
   email: string;
   display_name: string;
   success: boolean;
-  subscription: {
-    status: 'active' | 'inactive';
-    type: 'free' | 'pro' | 'ultimate';
-    roles: MemberRole[];
-    expiry: string | null;
-    plan_id: string;
-  };
+  // 直接沿用共用型別，避免這裡的內嵌定義再度和 types/auth.ts 漂移
+  subscription: Subscription;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -102,7 +135,7 @@ export function AuthProvider({ children, optional = false }: { children: React.R
 
   /**
    * 會話檢查（關鍵）：打 /session (GET) 對應 auth.php
-   * 回傳格式：{ logged_in, user:{ id, name, email } | null, nonce }
+   * 回傳格式：{ logged_in, user:{ id, name, email } | null, subscription, nonce }
    */
   const checkAuth = async () => {
     try {
@@ -116,14 +149,7 @@ export function AuthProvider({ children, optional = false }: { children: React.R
           display_name: data.user.name,
           email: data.user.email,
           success: true,
-          // 若你有真正的會員方案端點，再在此覆寫；目前給安全的預設
-          subscription: {
-            status: 'active',
-            type: 'free',
-            roles: [],
-            expiry: null,
-            plan_id: '',
-          },
+          subscription: normalizeSubscription(data?.subscription),
         });
       } else {
         setUser(null);
