@@ -36,7 +36,7 @@
   background-color: #ffffff;
 }
 
-/* Ensure ChatkitEmbed fills the box */
+/* Ensure the chat panel fills the box */
 .chatBox > * {
   width: 100% !important;
   height: 100% !important;

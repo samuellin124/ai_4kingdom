@@ -129,7 +129,7 @@ export function AuthProvider({ children, optional = false }: { children: React.R
         setUser(null);
       }
     } catch (err) {
-      // 在可選模式下，靜默降級為未登入，避免噴錯干擾開發/ChatKit 體驗
+      // 在可選模式下，靜默降級為未登入，避免噴錯干擾開發體驗
       if (isOptional) {
         console.warn('[WARN] 会话验证失败（已降級為可選）：', err);
         setUser(null);
