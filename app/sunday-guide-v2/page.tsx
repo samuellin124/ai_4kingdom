@@ -839,7 +839,7 @@ function SundayGuideContent() {
                   <li
                     key={file.fileId || idx}
                     className={`${styles.docItem} ${selectedFileId === file.fileId ? styles.docItemSelected : ''}`}
-                    onClick={() => handleSelectFile(file.fileId, file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName))}
+                    onClick={() => handleSelectFile(file.fileId, file.fileName)}
                     title="点击选择此文档"
                   >
                     {/* Delete button: only visible for own uploads, placed first */}
@@ -878,7 +878,7 @@ function SundayGuideContent() {
                       />
                     ) : (
                       <>
-                        <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                        <span className={styles.docFileName}>{file.fileName || file.sermonTitle}{file.sermonTitle && file.sermonTitle !== file.fileName && file.sermonTitle !== file.fileName.replace(/\.[^.]+$/, '') ? <span style={{ display: 'block', fontSize: '0.8em', fontWeight: 'normal', color: '#94a3b8' }}>{file.sermonTitle}</span> : null}</span>
                         {user?.user_id && (file.uploaderId?.toString() === user.user_id.toString() || allowedUploaders.includes(user.user_id)) && (
                           <button
                             className={styles.editTitleButton}

@@ -371,11 +371,22 @@ export function ChatProvider({
   else if (window.location.pathname.includes('jian-zhu')) unitId = 'jianZhu';
   else if (window.location.pathname.includes('cfsc-church')) unitId = 'cfscChurch';
   else if (window.location.pathname.includes('chinese-pastor-network')) unitId = 'chinesePastorNetwork';
+  else if (window.location.pathname.includes('zhiming-yuan')) unitId = 'zhiming-yuan';
       else {
               // 可擴充：從 localStorage 或 config 取得
               const storedUnit = localStorage.getItem('currentUnitId');
               if (storedUnit) unitId = storedUnit;
             }
+          }
+        } catch {}
+
+        // 文档列表選定的講章（由各單位頁面寫入 localStorage）；後端會驗證是否屬於本助手，
+        // 屬於則把 RAG 檢索限縮到這篇，否則搜尋整庫。
+        let selectedFileId: string | undefined;
+        try {
+          if (typeof window !== 'undefined') {
+            const sid = localStorage.getItem('selectedFileId');
+            if (sid) selectedFileId = sid;
           }
         } catch {}
 
@@ -449,7 +460,8 @@ export function ChatProvider({
                     vectorStoreId: config?.vectorStoreId,
                     stream: true // 啟用流式輸出
                 },
-                unitId
+                unitId,
+                fileId: selectedFileId
             })
         });
 

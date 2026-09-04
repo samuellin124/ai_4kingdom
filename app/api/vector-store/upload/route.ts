@@ -169,8 +169,10 @@ export async function POST(request: Request) {
       console.log(`[DEBUG] 添加文件到 Vector Store: ${vectorStoreId}`);
       await openai.vectorStores.files.create(
         vectorStoreId,
-        { 
-          file_id: uploadedFile.id
+        {
+          file_id: uploadedFile.id,
+          // sgFileId = 該檔案自身 id（= DynamoDB 記錄的 fileId），供 Chat 依「選定講章」過濾檢索
+          attributes: { sgFileId: uploadedFile.id, docType: 'source' },
         }
       );
       console.log(`[DEBUG] 文件成功添加到 Vector Store`);
@@ -184,7 +186,7 @@ export async function POST(request: Request) {
           });
           await openai.vectorStores.files.create(
             VECTOR_STORE_IDS.AGAPE_CHURCH,
-            { file_id: uploadedFile.id }
+            { file_id: uploadedFile.id, attributes: { sgFileId: uploadedFile.id, docType: 'source' } }
           );
           console.log('[DEBUG] 已同步到 Agape 專用向量庫');
         } catch (syncErr) {

@@ -297,7 +297,7 @@ export default function SundayGuide() {
                         />
                       ) : (
                         <>
-                          <span className={styles.fileName}>{(file as any).sermonTitle || file.fileName}</span>
+                          <span className={styles.fileName}>{file.fileName || (file as any).sermonTitle}{(file as any).sermonTitle && (file as any).sermonTitle !== file.fileName && (file as any).sermonTitle !== file.fileName.replace(/\.[^.]+$/, '') ? <span style={{ display: 'block', fontSize: '0.8em', fontWeight: 'normal', color: '#94a3b8' }}>{(file as any).sermonTitle}</span> : null}</span>
                           {user?.user_id && (file.uploaderId?.toString() === user.user_id.toString() || allowedUploaders.includes(user.user_id)) && (
                             <button
                               className={styles.editTitleButton}
