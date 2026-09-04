@@ -464,7 +464,7 @@ async function transcribeChunksParallel(
 }
 
 // GPT formatting
-// Chunk size stays well under gpt-4o's 16k output cap: ~6000 Chinese chars reformats
+// Chunk size stays well under the 16k max_completion_tokens cap: ~6000 Chinese chars reformats
 // to roughly the same length, so a reply can never be truncated mid-transcript.
 const FORMAT_CHUNK_CHARS = Math.max(1000, Number(process.env.FORMAT_CHUNK_CHARS) || 6000);
 const FORMAT_CONCURRENCY = Math.max(1, Number(process.env.FORMAT_CONCURRENCY) || 4);
@@ -485,12 +485,16 @@ const FORMAT_SYSTEM_PROMPT = [
 async function formatChunk(chunk: string): Promise<string> {
   try {
     const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o', temperature: 0,
+      // gpt-5.6-terra is a reasoning model: no temperature, max_tokens -> max_completion_tokens.
+      // Punctuation/segmentation is mechanical, so keep reasoning as low as this pinned SDK allows
+      // ('none' would be ideal but needs openai >=6 — see package.json). The raised token cap leaves
+      // headroom so reasoning tokens can't truncate the transcript (a short reply is dropped as raw).
+      model: 'gpt-5.6-terra', reasoning_effort: 'low',
       messages: [
         { role: 'system', content: FORMAT_SYSTEM_PROMPT },
         { role: 'user', content: chunk },
       ],
-      max_tokens: 16384,
+      max_completion_tokens: 24576,
     });
     const formatted = completion.choices[0]?.message?.content?.trim();
     if (!formatted) return chunk;

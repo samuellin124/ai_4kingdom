@@ -3,16 +3,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { getDynamoDBConfig } from "@/app/utils/dynamodb";
 import type { Subscription } from '@/app/types/auth';
-
-// 定義每個用戶類型的 token 額度
-const TOKEN_LIMITS = {
-  free: 100000,     // 100 credits
-  pro: 1000000,     // 1,000 credits
-  ultimate: 5000000 // 5,000 credits
-};
-
-// Token 轉換為 Credit 的比率
-const TOKEN_TO_CREDIT_RATIO = 1000; // 1000 tokens = 1 credit
+import { TOKEN_LIMITS, TOKEN_TO_CREDIT_RATIO } from '@/app/config/plans';
 
 // 獲取用戶訂閱信息
 async function getUserSubscription(userId: string): Promise<Subscription> {

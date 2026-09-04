@@ -99,8 +99,9 @@ function CfscChurchContent() {
     const target = (storedId ? allFiles.find(f => f.fileId === storedId) : null) || allFiles[0];
     if (!target) return;
     if (!selectedFileId) setSelectedFileId(target.fileId);
-    const displayName = (!target.fileName.toLowerCase().endsWith('.pdf') && target.sermonTitle)
-      ? target.sermonTitle : target.fileName;
+    // localStorage 永遠反映清單目前選中的講章（含載入時預設最新一篇）；Chat 以此為檢索範圍
+    if (typeof window !== 'undefined') localStorage.setItem('selectedFileId', target.fileId);
+    const displayName = target.fileName || target.sermonTitle || '';
     setNavFileName(storedName || displayName);
     setNavUploadTime(target.uploadDate);
   }, [allFiles]);
@@ -195,9 +196,7 @@ function CfscChurchContent() {
     setSermonContent(null);
     setSelectedMode(null);
     const file = recentFiles.find(f => f.fileId === fileId);
-    const displayName = fileName || (file
-      ? ((!file.fileName.toLowerCase().endsWith('.pdf') && file.sermonTitle) ? file.sermonTitle : file.fileName)
-      : '');
+    const displayName = fileName || (file ? (file.fileName || file.sermonTitle || '') : '');
     setNavFileName(displayName);
     setNavUploadTime(file?.uploadDate || '');
     try {
@@ -375,7 +374,7 @@ function CfscChurchContent() {
                         onClick={e => e.stopPropagation()} />
                     ) : (
                       <>
-                        <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                        <span className={styles.docFileName}>{file.fileName || file.sermonTitle}{file.sermonTitle && file.sermonTitle !== file.fileName && file.sermonTitle !== file.fileName.replace(/\.[^.]+$/, '') ? <span style={{ display: 'block', fontSize: '0.8em', fontWeight: 'normal', color: '#94a3b8' }}>{file.sermonTitle}</span> : null}</span>
                         {user?.user_id && (user.user_id === file.uploaderId || allowedUploaders.includes(user.user_id)) && (
                           <button className={styles.editTitleButton} title="編輯標題" onClick={e => { e.stopPropagation(); setEditingTitle(file.sermonTitle || file.fileName); setEditingFileId(file.fileId); }}>✎</button>
                         )}

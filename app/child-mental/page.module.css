@@ -23,7 +23,8 @@
   --chat-send-btn-bg: #1a1a1a;
   --chat-send-btn-hover: #333333;
   position: fixed;
-  top: 100px;
+  /* 100px icon (top:28 → 底緣 128px) + 12px 間距，讓面板頂緣在 icon 下方不擋住 */
+  top: 140px;
   right: 28px;
   z-index: 1099;
   width: 712px;

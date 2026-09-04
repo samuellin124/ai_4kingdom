@@ -163,6 +163,8 @@ function ZhimingYuanContent() {
     const target = (storedId ? allFiles.find(f => f.fileId === storedId) : null) || allFiles[0];
     if (!target) return;
     if (!selectedFileId) setSelectedFileId(target.fileId);
+    // 同步共用鍵，供 ChatContext / Chat RAG 以「清單目前選中的講章」為檢索範圍
+    if (typeof window !== 'undefined') localStorage.setItem('selectedFileId', target.fileId);
     setNavFileName(target.fileName.replace(/\.pdf$/i, ''));
     setNavUploadTime(target.uploadDate);
   }, [allFiles]);
@@ -207,6 +209,7 @@ function ZhimingYuanContent() {
       setNavUploadTime(file.uploadDate);
       try {
         localStorage.setItem('zhiming_selectedFileId', fileId);
+        localStorage.setItem('selectedFileId', fileId); // 共用鍵：供 Chat RAG 限縮
       } catch {
         // ignore
       }

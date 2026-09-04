@@ -107,7 +107,7 @@ async function resolveBatchProfile() {
     const a = await openai.beta.assistants.retrieve(BATCH_ASSISTANT_ID);
     _batchProfile = { model: a.model, instructions: a.instructions || undefined };
   } catch {
-    _batchProfile = { model: process.env.OPENAI_RESPONSES_MODEL || 'gpt-4o', instructions: undefined };
+    _batchProfile = { model: process.env.OPENAI_RESPONSES_MODEL || 'gpt-5.6-terra', instructions: undefined };
   }
   return _batchProfile;
 }
@@ -175,13 +175,14 @@ async function extractSermonTitle(summary, fileName) {
   if (!summary) return fileName.replace(/\.pdf$/i, '');
   try {
     const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5.6-terra',
       messages: [{
         role: 'user',
         content: `從以下文章總結中提取文章標題，只回答標題本身，不要任何其他內容或標點。\n文件名稱（參考）：${fileName}\n\n${summary.slice(0, 600)}`
       }],
-      max_tokens: 60,
-      temperature: 0,
+      // gpt-5.6-terra 為推理模型：max_tokens 改用 max_completion_tokens，不支援 temperature；機械式抽取關閉推理。
+      max_completion_tokens: 200,
+      reasoning_effort: 'none',
     });
     const title = res.choices[0]?.message?.content?.trim();
     return title ? title.slice(0, 80) : fileName.replace(/\.pdf$/i, '');
@@ -219,8 +220,7 @@ async function generateContent({ fileName, fileId, type, prompt, summaryText }) 
         tools: [{ type: 'file_search', vector_store_ids: [ZHIMING_VS_ID] }],
         tool_choice: 'required',
         max_output_tokens: tokenLimits[type] || 12000,
-        temperature: 0.3,
-        top_p: 0.9,
+        // gpt-5.6-terra 僅接受預設 temperature/top_p，故不再傳入
         instructions: `嚴格根據文件「${fileName}」的內容生成${type}。只使用文件中的資訊，若不確定請寫「[MISSING]」而非猜測。`,
         store: false,
       });
@@ -258,10 +258,14 @@ async function generateContent({ fileName, fileId, type, prompt, summaryText }) 
 }
 
 // ── 上傳 TXT 到 Vector Store ──────────────────────────────────────────────────
-async function uploadTxtToVS(vsId, name, content) {
+// sgFileId / docType 寫成向量庫檔案 attribute，供 Chat 依「選定講章」過濾檢索
+async function uploadTxtToVS(vsId, name, content, sgFileId, docType) {
   const f = new File([content], name, { type: 'text/plain' });
   const uploaded = await openai.files.create({ file: f, purpose: 'assistants' });
-  await openai.vectorStores.files.create(vsId, { file_id: uploaded.id });
+  await openai.vectorStores.files.create(vsId, {
+    file_id: uploaded.id,
+    ...(sgFileId ? { attributes: { sgFileId, docType: docType || 'generated' } } : {}),
+  });
   return uploaded.id;
 }
 
@@ -335,9 +339,18 @@ async function processOnePdf({ fileName, fileId }, idx, total) {
   for (const [type, content] of [['summary', summary], ['devotional', devotional], ['bibleStudy', bibleStudy]]) {
     if (!content) continue;
     process.stdout.write(`  → 上傳 ${type}.txt...`);
-    const fid = await uploadTxtToVS(ZHIMING_VS_ID, `${baseName}_${type}.txt`, content);
+    const fid = await uploadTxtToVS(ZHIMING_VS_ID, `${baseName}_${type}.txt`, content, fileId, type);
     genFileIds.push(fid);
     process.stdout.write(` ✓ ${fid}\n`);
+  }
+  // 原始講章檔（已在向量庫中）也補上 sgFileId attribute
+  try {
+    await openai.vectorStores.files.update(fileId, {
+      vector_store_id: ZHIMING_VS_ID,
+      attributes: { sgFileId: fileId, docType: 'source' },
+    });
+  } catch (e) {
+    console.warn(`  ⚠ 標記原始檔 ${fileId} attribute 失敗（不阻斷）:`, e?.message || e);
   }
 
   // ⑤ DynamoDB 寫入

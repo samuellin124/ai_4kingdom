@@ -10,14 +10,14 @@ import { ChatType, CHAT_TYPE_CONFIGS } from '../../config/chatTypes';
 interface WithChatProps {
   children: ReactNode;
   chatType?: ChatType;
-  disableChatContext?: boolean; // allow skipping ChatProvider for ChatKit pages
+  disableChatContext?: boolean; // skip ChatProvider for pages that don't use the bubble chat (still provides AuthProvider)
 }
 
 function ChatWrapper({ children, chatType = 'general', disableChatContext = false }: { children: ReactNode, chatType?: ChatType, disableChatContext?: boolean }) {
   const { user } = useAuth();
   const [isReady, setIsReady] = useState(false);
 
-  // 當 ChatKit 頁面禁用 ChatContext 時，直接渲染 children，避免等待使用者驗證
+  // disableChatContext：不需要 bubble chat 的頁面直接渲染 children，避免等待使用者驗證
   if (disableChatContext) {
     return <>{children}</>;
   }

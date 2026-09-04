@@ -43,8 +43,10 @@ async function generateSegmentPrompts(
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.6,
+      model: 'gpt-5.6-terra',
+      // gpt-5.6-terra 為推理模型：不支援 temperature；限制推理+輸出總量。
+      reasoning_effort: 'low',
+      max_completion_tokens: 8000,
       response_format: { type: 'json_object' },
       messages: [
         {

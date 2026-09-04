@@ -160,8 +160,10 @@ export async function POST(req: NextRequest) {
 
     // ── Step 1: 意圖分類（非串流）────────────────────────────────────────────
     const classifyRes = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0,
+      model: 'gpt-5.6-terra',
+      // gpt-5.6-terra 為推理模型：不支援 temperature。意圖分類僅需輕量推理。
+      reasoning_effort: 'low',
+      max_completion_tokens: 2000,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: INTENT_ROUTER_PROMPT },
@@ -202,10 +204,12 @@ export async function POST(req: NextRequest) {
     }
 
     const stream = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.6-terra',
       stream: true,
-      max_tokens: 2048,
-      temperature: 1,
+      // gpt-5.6-terra 為推理模型：max_tokens 改用 max_completion_tokens（含推理 token），不支援 temperature。
+      // 串流對話用 low effort，兼顧回答品質與首字延遲。
+      reasoning_effort: 'low',
+      max_completion_tokens: 4000,
       messages: [
         { role: 'system', content: systemPrompt },
         ...historyMessages,

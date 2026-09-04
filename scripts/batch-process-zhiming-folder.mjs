@@ -206,7 +206,10 @@ async function uploadPdf(localFile, existingVectorFiles) {
   const buffer = readFileSync(localFile.path);
   const file = new File([buffer], localFile.fileName, { type: 'application/pdf' });
   const uploaded = await openai.files.create({ file, purpose: 'assistants' });
-  await openai.vectorStores.files.create(ZHIMING_VECTOR_STORE_ID, { file_id: uploaded.id });
+  await openai.vectorStores.files.create(ZHIMING_VECTOR_STORE_ID, {
+    file_id: uploaded.id,
+    attributes: { sgFileId: uploaded.id, docType: 'source' }, // 供 Chat 依「選定講章」過濾
+  });
   await waitForVectorFile(uploaded.id);
   existingVectorFiles.set(localFile.fileName, { fileId: uploaded.id, status: 'completed' });
   return { fileId: uploaded.id, reused: false };
@@ -248,7 +251,7 @@ async function resolveProfile() {
     const a = await openai.beta.assistants.retrieve(PROCESSING_ASSISTANT_ID);
     _profile = { model: a.model, instructions: a.instructions || undefined };
   } catch {
-    _profile = { model: process.env.OPENAI_RESPONSES_MODEL || 'gpt-4o', instructions: undefined };
+    _profile = { model: process.env.OPENAI_RESPONSES_MODEL || 'gpt-5.6-terra', instructions: undefined };
   }
   return _profile;
 }
@@ -274,8 +277,7 @@ async function generateContent({ fileName, type, prompt, summaryText }) {
     tools: [{ type: 'file_search', vector_store_ids: [ZHIMING_VECTOR_STORE_ID] }],
     tool_choice: 'required',
     max_output_tokens: tokenLimits[type] || 12000,
-    temperature: 0.3,
-    top_p: 0.9,
+    // gpt-5.6-terra 僅接受預設 temperature/top_p，故不再傳入
     instructions: [
       'STRICT MODE:',
       `Only use the single document named "${fileName}".`,
@@ -300,9 +302,10 @@ async function generateContent({ fileName, type, prompt, summaryText }) {
 async function extractTitle(summary, fileName) {
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      max_tokens: 60,
+      model: 'gpt-5.6-terra',
+      // gpt-5.6-terra 為推理模型：max_tokens 改用 max_completion_tokens，不支援 temperature；機械式抽取關閉推理。
+      max_completion_tokens: 200,
+      reasoning_effort: 'none',
       messages: [{
         role: 'user',
         content: `Extract a short Chinese sermon/course title from this summary. Return only the title.\nFile name: ${fileName}\n\n${summary.slice(0, 900)}`,
@@ -314,11 +317,14 @@ async function extractTitle(summary, fileName) {
   }
 }
 
-async function uploadGeneratedTxt(baseName, type, content) {
+async function uploadGeneratedTxt(baseName, type, content, sgFileId) {
   const safeBase = baseName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
   const file = new File([content], `${safeBase}_${type}.txt`, { type: 'text/plain' });
   const uploaded = await openai.files.create({ file, purpose: 'assistants' });
-  await openai.vectorStores.files.create(ZHIMING_VECTOR_STORE_ID, { file_id: uploaded.id });
+  await openai.vectorStores.files.create(ZHIMING_VECTOR_STORE_ID, {
+    file_id: uploaded.id,
+    ...(sgFileId ? { attributes: { sgFileId, docType: type } } : {}),
+  });
   await waitForVectorFile(uploaded.id);
   return uploaded.id;
 }
@@ -396,9 +402,9 @@ async function processOne(localFile, prompts, existingVectorFiles) {
     const sermonTitle = await extractTitle(summary, localFile.fileName);
     const baseName = sermonTitle || basename(localFile.fileName, '.pdf');
     const generatedFileIds = [];
-    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'summary', summary));
-    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'devotional', devotional));
-    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'bibleStudy', bibleStudy));
+    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'summary', summary, upload.fileId));
+    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'devotional', devotional, upload.fileId));
+    generatedFileIds.push(await uploadGeneratedTxt(baseName, 'bibleStudy', bibleStudy, upload.fileId));
 
     await updateCompleted(timestamp, {
       summary,

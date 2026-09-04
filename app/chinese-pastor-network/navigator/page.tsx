@@ -99,7 +99,9 @@ function ChinesePastorNetworkNavigatorContent() {
         const storedItem = storedId ? mapped.find(m => m.fileUniqueId === storedId) : null;
         const target = storedItem || mapped[0];
         setSelectedFileUniqueId(target.fileUniqueId);
-        const displayName = (f: CPNRecord) => (!f.fileName.toLowerCase().endsWith('.pdf') && f.sermonTitle) ? f.sermonTitle : f.fileName;
+        // localStorage 反映清單目前選中的講章（含載入預設）；Chat 以此為檢索範圍
+        if (typeof window !== 'undefined') localStorage.setItem('selectedFileId', target.fileUniqueId);
+        const displayName = (f: CPNRecord) => f.fileName || f.sermonTitle || '';
         setFileName(storedItem ? (storedName || displayName(storedItem)) : displayName(target));
         setUploadTime(new Date(target.uploadTime).toLocaleDateString('zh-TW'));
       } else {

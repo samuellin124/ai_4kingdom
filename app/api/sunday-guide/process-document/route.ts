@@ -22,10 +22,12 @@ async function extractSermonTitle(openaiClient: OpenAI, summary: string, fileNam
   try {
     const fileNameHint = fileName ? `\n\n文件名稱（僅供參考）：${fileName}` : '';
     const res = await openaiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5.6-terra',
       messages: [{ role: 'user', content: `從以下講章總結中提取講道標題，只回答標題本身，不要任何其他內容、標點或說明。注意：如果看到「讲章标题」、「一、讲章标题」等模板佔位符文字，請忽略它們，從總結內容中找出真實的講道主題作為標題。${fileNameHint}\n\n${summary.slice(0, 800)}` }],
-      max_tokens: 60,
-      temperature: 0,
+      // gpt-5.6-terra 為推理模型：不支援 temperature，且 max_tokens 需改用 max_completion_tokens。
+      // 標題抽取屬機械式任務，關閉推理以維持速度與成本。
+      max_completion_tokens: 200,
+      reasoning_effort: 'none',
     });
     const title = res.choices[0]?.message?.content?.trim() || null;
     return title ? title.slice(0, 80) : null;
@@ -51,7 +53,8 @@ async function waitForFileReady(openaiClient: OpenAI, vectorStoreId: string, fil
     } catch (e) {
       // 忽略暫時性錯誤
     }
-    await new Promise(r => setTimeout(r, 1000));
+    // 500ms 輪詢：小檔（docx/pdf）通常數秒內就緒，較 1s 間隔可少等最多 ~0.5s/輪
+    await new Promise(r => setTimeout(r, 500));
   }
   console.warn(`[WARN] 等待檔案 ${fileId} 索引超時`);
   return false;
@@ -110,6 +113,7 @@ async function uploadGeneratedContentToVectorStore(
     sermonTitle,
     fileName,
     unitVectorStoreId,
+    sgFileId,
   }: {
     summary?: string;
     devotional?: string;
@@ -117,6 +121,8 @@ async function uploadGeneratedContentToVectorStore(
     sermonTitle: string | null;
     fileName: string;
     unitVectorStoreId: string;
+    // 該講章記錄的 fileId；寫成向量庫檔案 attribute，供 Chat 依「選定講章」過濾檢索
+    sgFileId?: string;
   }
 ): Promise<string[]> {
   const baseName = (sermonTitle || fileName.replace(/\.[^.]+$/, '')).slice(0, 60);
@@ -125,19 +131,23 @@ async function uploadGeneratedContentToVectorStore(
   if (devotional) contents.push({ type: 'devotional', content: devotional });
   if (bibleStudy) contents.push({ type: 'bibleStudy', content: bibleStudy });
 
-  const uploadedFileIds: string[] = [];
-  for (const { type, content } of contents) {
+  // 三份內容並行上傳（彼此獨立），較逐一 await 少等 2 個往返
+  const settled = await Promise.all(contents.map(async ({ type, content }) => {
     try {
       const txtFile = new File([content], `${baseName}_${type}.txt`, { type: 'text/plain' });
       const uploaded = await openaiClient.files.create({ file: txtFile, purpose: 'assistants' });
-      await openaiClient.vectorStores.files.create(unitVectorStoreId, { file_id: uploaded.id });
-      uploadedFileIds.push(uploaded.id);
+      await openaiClient.vectorStores.files.create(unitVectorStoreId, {
+        file_id: uploaded.id,
+        ...(sgFileId ? { attributes: { sgFileId, docType: type } } : {}),
+      });
       console.log(`[DEBUG] 已上傳 ${type} 至向量庫 ${unitVectorStoreId}: ${uploaded.id}`);
+      return uploaded.id as string;
     } catch (e) {
       console.warn(`[WARN] 上傳 ${type} 至向量庫失敗（不阻斷流程）:`, e);
+      return null;
     }
-  }
-  return uploadedFileIds;
+  }));
+  return settled.filter((id): id is string => !!id);
 }
 
 // 進度更新：若表不存在則僅記一次警告並停用後續寫入
@@ -222,12 +232,18 @@ async function processDocumentAsync(params: {
     console.warn('[WARN] 預標記 generationStatus=processing 失敗', e);
   }
 
+  // 各階段耗時（秒），最後彙總為一行 [TIMING] 日誌，方便診斷單次處理慢在哪
+  const timing: Record<string, number> = {};
+  const secSince = (t: number) => Number(((Date.now() - t) / 1000).toFixed(1));
+
   try {
     // 1. 統一準備向量庫資源
     console.log(`[DEBUG] 開始準備向量庫資源...`);
+    const tIndex = Date.now();
     const prepared = await prepareEffectiveVectorStore(openai, vectorStoreId, fileId);
     effectiveVectorStoreId = prepared.effectiveVectorStoreId;
     cleanup = prepared.cleanup;
+    timing.index = secSince(tIndex);
     console.log(`[DEBUG] 向量庫資源準備完成，使用 ID: ${effectiveVectorStoreId}`);
 
     // 不再更新進度狀態，只記錄日誌
@@ -282,12 +298,28 @@ async function processDocumentAsync(params: {
     
   const results: Record<string, string> = {};
 
+  // 各內容類型的輸出 token 上限（devotional 需 7 天 × 400-500字 + 完整經文，故較高）
+  const tokenConfig: Record<string, number> = {
+    summary: 8000,
+    devotional: 20000,
+    bibleStudy: 14000,
+  };
+  const MAX_OUTPUT_CEILING = 60000;
+  // status=incomplete 時，若輸出已達此長度即接受（不再盲目重試整份）
+  const acceptIncompleteIfAtLeast: Record<string, number> = {
+    summary: 1200,
+    devotional: 2500,
+    bibleStudy: 1800,
+  };
+  // 模型拒答／取不到檔案 —— 任何長度都算無效
+  const REFUSAL_PHRASES = ['無法直接訪問', '无法直接访问', '我無法直接訪問', '請提供', '無法讀取', '無法從您上傳的文件中檢索到'];
+
   // 單一內容類型處理函式（保留重試機制），支援注入 summary 文字以供後續內容優先引用經文
   async function processContentType({ type, prompt, summaryText }: { type: string, prompt: string, summaryText?: string }) {
       console.log(`[DEBUG] 並行處理 ${type} 內容開始...`);
-      
-      const failurePhrases = ['無法直接訪問', '无法直接访问', '我無法直接訪問', '請提供', '無法讀取', '[MISSING]', '無法從您上傳的文件中檢索到'];
+
       const maxRuns = 2; // 最多重試 2 次，搭配 MAX_POLLS=20 確保總時間 < 300s
+      let maxOut = tokenConfig[type] || MAX_OUTPUT_CEILING;
 
       for (let attempt = 1; attempt <= maxRuns; attempt++) {
         console.log(`[DEBUG] 開始生成 ${type} 內容 (嘗試 ${attempt}/${maxRuns})`);
@@ -336,13 +368,6 @@ ${type === 'devotional' ?
 請確保內容結構清晰、格式完整，就像專業的教會資源一樣。`
         });
 
-        // 針對不同內容類型的 token 分配設定 - 合理上限以避免 Lambda 超時
-        const tokenConfig = {
-          summary: 8000,       // 總結：約 1500-2000 字
-          devotional: 16000,   // 靈修：7天內容，每天 400-500 字
-          bibleStudy: 14000    // 查經：包含多個完整段落
-        };
-
         // 單次 Responses 呼叫（instructions 覆寫 assistant 原設定，語意同舊 run 級 instructions）
         let result;
         try {
@@ -351,9 +376,11 @@ ${type === 'devotional' ?
             input: inputMessages,
             vectorStoreId: effectiveVectorStoreId,
             requireFileSearch: true,
-            maxOutputTokens: tokenConfig[type as keyof typeof tokenConfig] || 60000,
-            temperature: 0.3, // 降低隨機性，增加結構一致性
-            topP: 0.9,
+            maxOutputTokens: maxOut,
+            // 註：gpt-5.6-terra（推理模型）僅接受預設 temperature/top_p，故不再傳入；
+            //     結構一致性改由下方 STRICT MODE instructions 與 prompt 格式要求控制。
+            // 這三項為「讀原文 → 依固定結構重寫」的任務，low 推理即足夠，可顯著縮短生成時間。
+            reasoningEffort: 'low',
             instructions: `STRICT MODE:
 - Only use the sermon file (and the provided summary for verse priority when present).
 - For every Bible verse: paste full text and append one of [From Summary] / [In Sermon] / [Supplemental: reason].
@@ -369,21 +396,35 @@ ${type === 'devotional' ?
         }
 
         if (result.status !== 'completed') {
-          console.warn(`[WARN] ${type} 執行未完成狀態=${result.status}；嘗試 ${attempt}`);
+          const partial = (result.text || '').trim();
+          const minAccept = acceptIncompleteIfAtLeast[type] ?? 1500;
+          // status=incomplete 且輸出已夠長 → 直接採用，避免再花數分鐘重生（多半仍 incomplete）
+          if (result.status === 'incomplete' && partial.length >= minAccept) {
+            console.warn(`[WARN] ${type} status=incomplete 但已產出 ${partial.length} 字，直接採用（未重試）`);
+            return { type, content: result.text, attempts: attempt };
+          }
+          console.warn(`[WARN] ${type} 執行未完成狀態=${result.status}（長度=${partial.length}）；嘗試 ${attempt}`);
           if (attempt === maxRuns) throw new Error(`處理 ${type} 內容失敗: ${result.status}`);
-          // 輕量回退後重試
+          // incomplete 多半是撞到 token 上限，重試時提高上限而非沿用會再撞的同一值
+          if (result.status === 'incomplete') maxOut = Math.min(Math.round(maxOut * 1.5), MAX_OUTPUT_CEILING);
           await new Promise(r => setTimeout(r, 600));
           continue;
         }
 
         const content = result.text;
 
-        const invalid = failurePhrases.some(p => content.includes(p)) || content.trim().length < 50;
-        console.log(`[DEBUG] ${type} 嘗試 ${attempt} 完成，長度=${content.length}，invalid=${invalid}`);
-        
+        const trimmed = content.trim();
+        const refused = REFUSAL_PHRASES.some(p => content.includes(p));
+        // [MISSING] 是 instructions 允許的「此段講章確實沒有此內容」標記；
+        // 僅在它主導整份輸出（過短或多次出現）時才視為無效，否則保留完整長文
+        const missingCount = (content.match(/\[MISSING\]/g) || []).length;
+        const missingDominates = missingCount > 0 && (trimmed.length < 400 || missingCount >= 5);
+        const invalid = trimmed.length < 50 || refused || missingDominates;
+        console.log(`[DEBUG] ${type} 嘗試 ${attempt} 完成，長度=${content.length}，invalid=${invalid}${missingCount ? ` (missing×${missingCount})` : ''}`);
+
         if (invalid) {
           if (attempt < maxRuns) {
-            console.warn(`[WARN] ${type} 內容無效 (包含錯誤關鍵字或過短)，將重試...`);
+            console.warn(`[WARN] ${type} 內容無效 (拒答／過短／[MISSING] 主導)，將重試...`);
             // 這裡不需要再 waitForVectorStoreReady，因為我們在最外層已經確保它 ready 了
             // 除非是偶發的檢索失敗，重試 run 即可
             continue; // retry
@@ -392,18 +433,29 @@ ${type === 'devotional' ?
             throw new Error(`處理 ${type} 內容失敗: 產生的內容無效或包含錯誤訊息`);
           }
         }
-        
-        return { type, content };
+
+        return { type, content, attempts: attempt };
       }
       throw new Error(`處理 ${type} 內容最終失敗`);
     }
     
+    // 每個內容類型實際用掉的生成次數（>1 表示發生重試），彙總進 [TIMING] 日誌
+    const attemptsUsed: Record<string, number> = {};
+
     // 先產出 summary，再並行產出 devotional / bibleStudy（注入 summary 內容以強化經文一致性）
     console.log('[DEBUG] 先產出 summary，再以其作為後續依據');
+    const tSummary = Date.now();
     const summaryRes = await processContentType({ type: 'summary', prompt: (contentTypes[0].prompt) });
     results['summary'] = summaryRes.content;
+    attemptsUsed.summary = summaryRes.attempts;
+    timing.summary = secSince(tSummary);
+
+    // 標題抽取只需 summary，提前於此並行啟動，隱藏在較長的 devotional / bibleStudy 生成時間內
+    // （extractSermonTitle 內建 try/catch，永不 reject）
+    const sermonTitlePromise = extractSermonTitle(openai, results.summary, fileName);
 
     console.log('[DEBUG] 產出 devotional / bibleStudy（帶入 summary 內容以優先經文）');
+    const tDevBible = Date.now();
     const settled = await Promise.allSettled([
       processContentType({ type: 'devotional', prompt: (contentTypes[1].prompt), summaryText: results.summary }),
       processContentType({ type: 'bibleStudy', prompt: (contentTypes[2].prompt), summaryText: results.summary })
@@ -411,10 +463,12 @@ ${type === 'devotional' ?
     for (const s of settled) {
       if (s.status === 'fulfilled') {
         results[s.value.type] = s.value.content;
+        attemptsUsed[s.value.type] = s.value.attempts;
       } else {
         console.warn('[WARN] 子任務失敗:', s.reason);
       }
     }
+    timing.devBible = secSince(tDevBible);
     console.log(`[DEBUG] devotional / bibleStudy 並行處理完成`);
 
     // 獲取處理結束時間並計算總處理時間（毫秒）
@@ -426,6 +480,7 @@ ${type === 'devotional' ?
   // docClient 已於函數頂部建立
     
     // 使用完整掃描來可靠地查找記錄
+    const tScan = Date.now();
     const scanParams: any = {
       TableName: SUNDAY_GUIDE_TABLE,
       FilterExpression: unitId 
@@ -452,9 +507,10 @@ ${type === 'devotional' ?
       pageCount += 1;
     } while (lastEvaluatedKey && pageCount < maxPages);
     
-    console.log(`[DEBUG] 完整掃描找到 ${existingRecords.Items.length} 條fileId${unitId ? '+unitId' : ''}匹配記錄（共${pageCount}頁）`);
-    
-    const sermonTitle = (await extractSermonTitle(openai, results.summary, fileName)) || (fileName ? fileName.replace(/\.[^.]+$/, '') : null);
+    timing.scan = secSince(tScan);
+    console.log(`[DEBUG] 完整掃描找到 ${existingRecords.Items.length} 條fileId${unitId ? '+unitId' : ''}匹配記錄（共${pageCount}頁，${timing.scan}s）`);
+
+    const sermonTitle = (await sermonTitlePromise) || (fileName ? fileName.replace(/\.[^.]+$/, '') : null);
     console.log(`[DEBUG] 提取講章標題: ${sermonTitle}`);
 
     if (existingRecords.Items && existingRecords.Items.length > 0) {
@@ -525,7 +581,12 @@ ${type === 'devotional' ?
       }));
     }
 
+    // 主記錄已標記 completed，先寫進度表讓前端立即看到「處理完成」，
+    // 之後的單位向量庫同步屬背景 RAG 索引，不需擋在使用者可見的完成狀態前。
+    await updateProgress(docClient, { vectorStoreId, fileName, stage: 'bibleStudy', status: 'completed', progress: 100 });
+
     // 同步生成內容到單位共用向量庫（供 Chat UI RAG 使用）
+    const tUpload = Date.now();
     const unitCfg = getSundayGuideUnitConfig(unitId);
     const unitVectorStoreId = unitCfg?.vectorStoreId;
     if (unitVectorStoreId) {
@@ -536,6 +597,7 @@ ${type === 'devotional' ?
         sermonTitle,
         fileName,
         unitVectorStoreId,
+        sgFileId: fileId || vectorStoreId,
       });
       // 將生成文件的 fileId 存回 DynamoDB，以便後續清理
       if (generatedFileIds.length > 0) {
@@ -563,9 +625,15 @@ ${type === 'devotional' ?
     } else {
       console.warn('[WARN] 無法取得單位向量庫 ID，跳過同步生成內容', { unitId });
     }
+    timing.upload = secSince(tUpload);
 
-  // 最終標記完成進度
-  await updateProgress(docClient, { vectorStoreId, fileName, stage: 'bibleStudy', status: 'completed', progress: 100 });
+    // 單行彙總：一眼看出這次處理慢在哪個階段、哪個內容類型重試了
+    console.log(
+      `[TIMING] ${fileName} total=${(serverProcessingTime / 1000).toFixed(1)}s ` +
+      `index=${timing.index ?? '?'}s summary=${timing.summary ?? '?'}s devBible=${timing.devBible ?? '?'}s ` +
+      `scan=${timing.scan ?? '?'}s upload=${timing.upload ?? '?'}s ` +
+      `attempts=${JSON.stringify(attemptsUsed)}`
+    );
 
     console.log('[DEBUG] 處理完成，結果已保存');
     return true;

@@ -44,6 +44,8 @@ export interface GenerateParams {
   maxOutputTokens?: number;
   temperature?: number;
   topP?: number;
+  /** Reasoning-model effort (Responses API `reasoning.effort`). Only pass for gpt-5.x models. */
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   requireFileSearch?: boolean;
   metadata?: Record<string, string>;
 }
@@ -81,6 +83,7 @@ export async function generateResponse(openai: OpenAI, params: GenerateParams): 
     ...(params.maxOutputTokens ? { max_output_tokens: params.maxOutputTokens } : {}),
     ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
     ...(params.topP !== undefined ? { top_p: params.topP } : {}),
+    ...(params.reasoningEffort ? { reasoning: { effort: params.reasoningEffort } } : {}),
     ...(params.metadata ? { metadata: params.metadata } : {}),
   });
 

@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { NextResponse } from 'next/server';
 import { updateMonthlyTokenUsage } from '../../utils/monthlyTokenUsage';
 import { getConcernLabel } from '../../types/homeschool';
@@ -8,6 +8,7 @@ import { resolveAssistantProfile, AssistantNotFoundError } from '../../lib/opena
 import { ensureConversation, isConversationId } from '../../lib/openai/conversation';
 import { toTokenUsage, extractResponseText } from '../../lib/openai/responses';
 import { acquireConversationLock, releaseConversationLock } from '../../lib/openai/conversationLock';
+import { getSundayGuideUnitConfig, findUnitByAssistantId } from '../../config/constants';
 
 // Ensure dynamic behavior on Amplify/Next.js App Router
 export const dynamic = 'force-dynamic';
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const { message, threadId, userId, config, unitId } = requestBody;
+    const { message, threadId, userId, config, unitId, fileId } = requestBody;
 
     // 驗證必要參數
     if (!message || !config || !config.assistantId) {
@@ -206,15 +207,72 @@ export async function POST(request: Request) {
     const homeschoolInstructions = config.type === 'homeschool' ? await buildHomeschoolInstructions(userId) : undefined;
     const instructions = homeschoolInstructions ?? profile.instructions;
 
+    // 若前端帶了選定的講章 fileId，且該記錄確實屬於本對話的單位/助手，就把 file_search 限縮到這篇；
+    // 否則（沒選、或 fileId 是別頁殘留）維持搜尋整個單位向量庫。
+    // 檢查對象包含：本對話的 assistantId + 該單位的專屬 assistantId（jian-zhu 用 SUNDAY_GUIDE 助手
+    // 對話但記錄掛在 JIAN_ZHU；zhiming-yuan 舊記錄掛在 SUNDAY_GUIDE）。
+    let scopedFileId: string | null = null;
+    if (fileId && typeof fileId === 'string') {
+      const candidateAssistantIds = new Set<string>();
+      if (config.assistantId) candidateAssistantIds.add(config.assistantId);
+      if (unitId) {
+        const uc = getSundayGuideUnitConfig(unitId);
+        if (uc?.assistantId) candidateAssistantIds.add(uc.assistantId);
+      }
+      try {
+        const doc = await getDocClient();
+        const table = process.env.NEXT_PUBLIC_SUNDAY_GUIDE_TABLE || 'SundayGuide';
+        for (const aid of candidateAssistantIds) {
+          // 不能用 Limit：DynamoDB 的 Limit 是「套 FilterExpression 前」的讀取上限，
+          // 加 Limit:1 只會讀分區第一筆再過濾，通常過濾不到；分區筆數小，整區掃即可。
+          const q = await doc.send(new QueryCommand({
+            TableName: table,
+            KeyConditionExpression: 'assistantId = :aid',
+            FilterExpression: 'fileId = :fid',
+            ExpressionAttributeValues: { ':aid': aid, ':fid': fileId },
+          }));
+          const rec = q.Items?.[0];
+          if (!rec) continue;
+          // 只有當「該講章生成內容所在的單位向量庫」== 本對話實際檢索的向量庫時才限縮，
+          // 否則過濾會套用在沒有這些檔案的庫上，導致檢索不到（例如 jian-zhu 對話目前指向
+          // 通用 SUNDAY_GUIDE 向量庫，但其生成內容在 JIAN_ZHU 向量庫）。
+          const recUnit = rec.unitId || findUnitByAssistantId(rec.assistantId);
+          const recStore = getSundayGuideUnitConfig(recUnit)?.vectorStoreId;
+          if (recStore && recStore === config.vectorStoreId) {
+            scopedFileId = fileId;
+            console.log('[DEBUG] Chat 檢索限縮至選定講章:', { fileId, matchedAssistantId: aid, recUnit });
+          } else {
+            console.log('[DEBUG] 選定講章所屬向量庫與本對話不符，不限縮:', { fileId, recUnit, recStore, chatStore: config.vectorStoreId });
+          }
+          break;
+        }
+        if (!scopedFileId) {
+          console.log('[DEBUG] 未限縮檢索（未找到記錄或向量庫不符），搜尋整庫:', { fileId, tried: [...candidateAssistantIds], unitId });
+        }
+      } catch (e) {
+        console.warn('[WARN] 驗證選定 fileId 失敗，改為搜尋整庫:', e);
+      }
+    }
+
+    const fileSearchTool = config.vectorStoreId
+      ? {
+          type: 'file_search' as const,
+          vector_store_ids: [config.vectorStoreId],
+          // 限制檢索片段數以壓低 input token（預設約 20 段會把整段內容塞進上下文）
+          max_num_results: 8,
+          ...(scopedFileId ? { filters: { key: 'sgFileId', type: 'eq' as const, value: scopedFileId } } : {}),
+        }
+      : null;
+
     const baseParams = {
       model: profile.model,
       ...(instructions ? { instructions } : {}),
       conversation: conversationId,
       input: [{ role: 'user' as const, content: String(message) }],
       max_output_tokens: 2500,
-      ...(config.vectorStoreId ? {
-        tools: [{ type: 'file_search' as const, vector_store_ids: [config.vectorStoreId] }]
-      } : {})
+      // 對話問答不需要深度推理；gpt-5.6 預設 medium 會產生大量計費的推理 token，改用 low
+      reasoning: { effort: 'low' as const },
+      ...(fileSearchTool ? { tools: [fileSearchTool] } : {})
     };
 
     // 检查是否請求流式輸出

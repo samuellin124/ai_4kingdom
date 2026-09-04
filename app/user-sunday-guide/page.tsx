@@ -1,11 +1,8 @@
 "use client";
 
-import Script from 'next/script';
-
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCredit } from '../contexts/CreditContext';
-import ChatkitEmbed from '../components/ChatkitEmbed';
 import WithChat from '../components/layouts/WithChat';
 import styles from './page.module.css';
 import { CHAT_TYPES } from '../config/chatTypes';
@@ -425,19 +422,11 @@ function SundayGuideContent() {
 
   return (
     <div className={styles.container}>
-      <Script src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js" strategy="afterInteractive" />
       <h1 className={styles.title}>主日信息导航</h1>
       {/* 極簡來源狀態提示 */}
       <div style={{ fontSize: '14px', color: '#4b5563', marginTop: 4, marginBottom: 8, textAlign: 'center' }}>
         当前使用最新上传的讲章作为解析来源
       </div>
-      
-      {/* ChatKit UI 模塊 - 在按鈕點擊後才顯示 */}
-      {isButtonClicked && user && (
-        <div className={styles.chatSection}>
-          <ChatkitEmbed userId={user.user_id} />
-        </div>
-      )}
 
       <div className={styles.buttonGroup}>
         <button 

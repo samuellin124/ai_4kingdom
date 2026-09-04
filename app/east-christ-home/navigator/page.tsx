@@ -104,8 +104,10 @@ function EastNavigatorContent() {
         const storedName = typeof window !== 'undefined' ? localStorage.getItem('selectedFileName') : null;
         const storedItem = storedId ? mapped.find(m => m.fileUniqueId === storedId) : null;
         const target = storedItem || mapped[0];
-        const displayName = (f: EastRecord) => (!f.fileName.toLowerCase().endsWith('.pdf') && f.sermonTitle) ? f.sermonTitle : f.fileName;
+        const displayName = (f: EastRecord) => f.fileName || f.sermonTitle || '';
         setSelectedFileUniqueId(target.fileUniqueId);
+        // localStorage 反映清單目前選中的講章（含載入預設）；Chat 以此為檢索範圍
+        if (typeof window !== 'undefined') localStorage.setItem('selectedFileId', target.fileUniqueId);
         setFileName(storedItem ? (storedName || displayName(storedItem)) : displayName(target));
         setUploadTime(new Date(target.uploadTime).toLocaleDateString('zh-TW'));
       } else {

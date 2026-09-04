@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
- * 使用 GPT-4o 為 Whisper 原始轉錄文字加上標點符號、分段，提升可讀性。
+ * 使用 gpt-5.6-terra（reasoning_effort: none）為 Whisper 原始轉錄文字加上標點符號、分段，提升可讀性。
  *
  * @param rawText  Whisper 輸出的原始文字（無標點）
  * @returns        格式化後的文字
@@ -35,8 +35,10 @@ export async function formatTranscript(rawText: string): Promise<string> {
 
 async function formatChunk(text: string): Promise<string> {
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    temperature: 0,
+    model: 'gpt-5.6-terra',
+    // gpt-5.6-terra 為推理模型：不支援 temperature。標點/分段屬機械式編輯，關閉推理以避免
+    // 推理 token 佔用輸出額度導致轉錄內容被截斷（下游會因回覆過短而退回原始文字）。
+    reasoning_effort: 'none',
     messages: [
       {
         role: 'system',
@@ -55,7 +57,7 @@ async function formatChunk(text: string): Promise<string> {
         content: text,
       },
     ],
-    max_tokens: 16384,
+    max_completion_tokens: 16384,
   });
 
   return completion.choices[0]?.message?.content?.trim() ?? text;

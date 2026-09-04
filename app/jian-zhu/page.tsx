@@ -243,7 +243,7 @@ export default function JianZhuPage() {
                         />
                       ) : (
                         <>
-                          <span className={styles.docFileName}>{file.fileName.toLowerCase().endsWith('.pdf') ? file.fileName : (file.sermonTitle || file.fileName)}</span>
+                          <span className={styles.docFileName}>{file.fileName || file.sermonTitle}{file.sermonTitle && file.sermonTitle !== file.fileName && file.sermonTitle !== file.fileName.replace(/\.[^.]+$/, '') ? <span style={{ display: 'block', fontSize: '0.8em', fontWeight: 'normal', color: '#94a3b8' }}>{file.sermonTitle}</span> : null}</span>
                           {user?.user_id && (user.user_id === file.uploaderId || allowedUploaders.includes(user.user_id)) && (
                             <button
                               className={styles.editTitleButton}
