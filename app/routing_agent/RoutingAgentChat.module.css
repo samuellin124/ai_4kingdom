@@ -113,6 +113,14 @@
   background: #9ca3af;
 }
 
+/* 對話內容寬度與下方輸入框對齊（同為 900px 置中） */
+.messagesContainer > * {
+  width: 100%;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .message {
   display: flex;
   gap: 12px;
