@@ -98,6 +98,38 @@ async function prepareEffectiveVectorStore(openaiClient: OpenAI, vectorStoreId: 
       throw new Error(`檔案 ${targetFileId} 在向量庫中索引失敗，請確認檔案格式（建議使用 PDF 或 .docx），或重新上傳。`);
     }
     console.log(`[INFO] 向量庫 ${vectorStoreId} 的檔案 ${targetFileId} 索引就緒，開始生成內容`);
+
+    // 單位共用向量庫同時存放多篇講章與歷次生成內容（CFSC 一度累積到 83 個檔案），
+    // 只靠提示詞說「只處理這一篇」不足以限制 file_search 的檢索範圍 —— 實測會抓到別篇講章。
+    // 因此改為每次處理都建一個只含本篇的臨時向量庫，跑完由 cleanup 刪除；
+    // 萬一 cleanup 沒跑到，expires_after 會讓它自動過期。
+    try {
+      const tempStore = await openaiClient.vectorStores.create({
+        name: `sg-temp-${targetFileId}`.slice(0, 64),
+        expires_after: { anchor: 'last_active_at', days: 1 },
+      });
+      await openaiClient.vectorStores.files.create(tempStore.id, { file_id: targetFileId });
+      const tempReady = await waitForFileReady(openaiClient, tempStore.id, targetFileId);
+      if (tempReady) {
+        console.log(`[INFO] 已建立單篇臨時向量庫 ${tempStore.id}，檢索範圍限定於 ${targetFileId}`);
+        return {
+          effectiveVectorStoreId: tempStore.id,
+          cleanup: async () => {
+            try {
+              await openaiClient.vectorStores.delete(tempStore.id);
+              console.log(`[DEBUG] 已刪除臨時向量庫 ${tempStore.id}`);
+            } catch (e) {
+              console.warn(`[WARN] 刪除臨時向量庫失敗（已設 expires_after，將自動過期）: ${tempStore.id}`, e);
+            }
+          },
+        };
+      }
+      console.warn('[WARN] 臨時向量庫索引未就緒，改用單位共用向量庫（可能檢索到其他講章）');
+      try { await openaiClient.vectorStores.delete(tempStore.id); } catch {}
+    } catch (e) {
+      // 建立臨時向量庫失敗不阻斷處理，退回共用向量庫（維持舊行為）
+      console.warn('[WARN] 建立單篇臨時向量庫失敗，改用單位共用向量庫（可能檢索到其他講章）', e);
+    }
   }
 
   return { effectiveVectorStoreId, cleanup };
@@ -327,7 +359,7 @@ async function processDocumentAsync(params: {
         if (type !== 'summary' && summaryText) {
           inputMessages.push({
             role: 'user',
-            content: `Here is the sermon summary already generated:\n---\n${summaryText}\n---\n\nWhen selecting and quoting Bible verses for this ${type}, you MUST:\n1) FIRST prioritize verses already identified in the summary and label them [From Summary];\n2) SECOND use verses directly present in the sermon file and label them [In Sermon];\n3) ONLY THEN, if fewer than required, add supplemental verses labeled [Supplemental: reason] with a short justification.\n\nAlways paste the exact verse text from the Simplified Chinese Union Version (简体中文和合本圣经), even when the sermon is in English or Traditional Chinese. Avoid duplication unless the sermon itself repeats the verse.`
+            content: `Here is the sermon summary already generated:\n---\n${summaryText}\n---\n\nWhen selecting and quoting Bible verses for this ${type}, you MUST follow this priority order:\n1) FIRST use verses already identified in the summary;\n2) SECOND use verses directly present in the sermon file;\n3) ONLY THEN, if fewer than required, add the most directly relevant supplemental verses.\n\nNever write where a verse came from: no [From Summary], [In Sermon], [Supplemental] or any similar label, bracket or parenthetical note anywhere in the output. The priority order governs which verses you pick, not how you present them.\n\nAlways paste the exact verse text from the Simplified Chinese Union Version (简体中文和合本圣经), even when the sermon is in English or Traditional Chinese. Avoid duplication unless the sermon itself repeats the verse.`
           });
         }
 
@@ -388,7 +420,7 @@ ${isUnitCustom ?
 - Only use the sermon file (and the provided summary for verse priority when present).
 - Write the ENTIRE output in Simplified Chinese (简体中文), including headings, body text, questions, prayers, song titles and testimony. This applies even when the sermon file is in English or Traditional Chinese. Never output Traditional Chinese characters.
 - Quote every Bible verse from the Simplified Chinese Union Version (简体中文和合本圣经).
-- For every Bible verse: paste full text and append one of [From Summary] / [In Sermon] / [Supplemental: reason].
+- For every Bible verse: paste the full verse text, and never append a source label such as [From Summary] / [In Sermon] / [Supplemental] or any similar bracketed note.
 - Follow the exact format structure requested in the prompt.
 - For ${type}, ensure ALL required sections are included with proper formatting.
 - If uncertain about content, write "[MISSING]" rather than guessing.`

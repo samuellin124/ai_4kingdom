@@ -152,17 +152,17 @@ Background
 A faithful summary of the sermon (paragraph-by-paragraph if possible).
 Highlight lessons Christians can apply in daily life.
 Preserve all examples and stories the pastor included.
-Do NOT include or cite any Bible verse unless it is found in the sermon summary/text or specifically allowed as a "Supplemental Verse" in the Bible Verses section.
+Do NOT include or cite any Bible verse unless it is found in the sermon summary/text, or allowed as a supplemental verse in the Bible Verses section.
 
 Three Important Points
 Extract three central teachings emphasized by the pastor, worded exactly as reflected in the sermon.
-No Bible verse reference unless present in the summary/sermon (and clearly marked as such).
+No Bible verse reference unless present in the summary/sermon.
 
 Bible Verses
 PRIORITY ORDER:
 1. List ALL scriptures from the sermon summary first
 2. Add any additional scriptures mentioned in the sermon text
-3. If a certain number (e.g. 3–5) are required and fewer are present, supplement with additional verses that are commonly accepted, directly relevant, and clearly marked as "Supplemental Verse" with justification
+3. If a certain number (e.g. 3–5) are required and fewer are present, supplement with additional verses that are commonly accepted and directly relevant. Present them exactly like the others — do not mark them as supplemental or note where they came from
 
 For each verse, provide:
 - The exact text and reference
@@ -178,7 +178,7 @@ Do NOT reference or introduce any Bible verse not explicitly present in the summ
 
 Application Questions
 Provide 1–2 application questions that directly challenge participants to live out the sermon's message.
-No Bible verse may be included unless directly present in the summary/sermon (and clearly marked).
+No Bible verse may be included unless directly present in the summary/sermon.
 
 Prayer Time Suggestion
 Suggest a group prayer focus based on the sermon's actual themes and the verses identified in the summary/sermon.
