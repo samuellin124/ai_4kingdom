@@ -43,7 +43,9 @@ Instructions
 - Do NOT add any source annotations, labels, or parenthetical notes after scripture references (e.g., do not write "from summary", "in sermon", "(sermon)", "(summary)", or any similar attribution).
 
 4. Output Language
-- The language of your output must match the original sermon language.
+- Write the entire output in Simplified Chinese (简体中文), including the title, the summary and every heading.
+- Quote all scripture from the Simplified Chinese Union Version (简体中文和合本圣经).
+- This applies even when the sermon is in English or Traditional Chinese. Never output Traditional Chinese characters.
 
 ---
 
@@ -108,7 +110,10 @@ Provide prayer direction strictly based on this section's sermon content and the
 Do NOT include or allude to any other Bible verse.
 
 🎯 Goal:
-Produce a faithful, complete, and carefully justified 7-day devotional plan that maximizes the use of scriptures already identified in the sermon summary and text, with minimal supplementation only when necessary to meet format requirements.`,
+Produce a faithful, complete, and carefully justified 7-day devotional plan that maximizes the use of scriptures already identified in the sermon summary and text, with minimal supplementation only when necessary to meet format requirements.
+
+Output Language:
+Write the entire devotional plan in Simplified Chinese (简体中文), including all day headings, summaries, prayer guidance and section titles. Quote all scripture from the Simplified Chinese Union Version (简体中文和合本圣经). This applies even when the sermon is in English or Traditional Chinese. Never output Traditional Chinese characters.`,
 
   bibleStudy: `You are an assistant to Christian pastors and evangelists. Your task is to prepare a complete Bible study guide based strictly on the pastor's sermon text.
 This guide will be used by small group leaders to help members review, study, and apply the sermon.
@@ -193,7 +198,10 @@ Do NOT add or reference any scripture not present in the summary/sermon.
 If the sermon includes a personal testimony, use it; otherwise, generate one that fits the message and sermon context only.
 
 🎯 Goal:
-Produce a faithful, complete, and detailed Bible study guide that maximizes the use of scriptures already identified in the sermon summary, supplemented by verses from the sermon text, with minimal external supplementation only when format requirements demand it and all supplementation clearly labeled and justified.`
+Produce a faithful, complete, and detailed Bible study guide that maximizes the use of scriptures already identified in the sermon summary, supplemented by verses from the sermon text, with minimal external supplementation only when format requirements demand it and all supplementation clearly labeled and justified.
+
+Output Language:
+Write the entire Bible study guide in Simplified Chinese (简体中文), including all section headings, explanations, questions, prayer suggestions, song titles, and testimony. Quote all scripture from the Simplified Chinese Union Version (简体中文和合本圣经). This applies even when the sermon is in English or Traditional Chinese. Never output Traditional Chinese characters.`
 };
 
 // 檢查回應是否為無效內容（錯誤訊息或空白）
@@ -344,38 +352,47 @@ export async function getPromptsInBatch(promptIds: string[], tableName: string):
   return results;
 }
 
+/** 提示詞來源：unit = 單位專用列、base = 共用列、default = 程式內建預設 */
+export interface ResolvedPrompt {
+  content: string;
+  source: 'unit' | 'base' | 'default';
+}
+
 /**
  * 依據單位（unitId）獲取 prompts：優先使用 `${baseId}.${unitId}` 變體，若為空則回退到 base，再回退到內建默認。
+ * 回傳值同時帶出實際採用的來源，呼叫端可據此決定是否套用共用的格式硬性要求。
  * @param basePromptIds 基礎 prompt Id (不含單位後綴) 陣列，例如 ['summary','devotional']
  * @param unitId 單位 ID（default / agape ...）
  * @param tableName DynamoDB 資料表名稱
  */
 export async function getPromptsByUnit(
-  basePromptIds: string[], 
-  unitId: string, 
+  basePromptIds: string[],
+  unitId: string,
   tableName: string
-): Promise<Record<string, string>> {
-  const results: Record<string, string> = {};
-  
+): Promise<Record<string, ResolvedPrompt>> {
+  const results: Record<string, ResolvedPrompt> = {};
+
   for (const baseId of basePromptIds) {
     const unitSpecificId = `${baseId}.${unitId}`;
-    
+
     // 1. 先嘗試獲取 unit 專用的 prompt
     let prompt = await getPrompt(unitSpecificId, tableName);
-    
+    if (prompt && !isInvalidPromptContent(prompt)) {
+      results[baseId] = { content: prompt, source: 'unit' };
+      continue;
+    }
+
     // 2. 如果 unit 專用的為空，嘗試 base ID
-    if (!prompt || isInvalidPromptContent(prompt)) {
-      prompt = await getPrompt(baseId, tableName);
+    prompt = await getPrompt(baseId, tableName);
+    if (prompt && !isInvalidPromptContent(prompt)) {
+      results[baseId] = { content: prompt, source: 'base' };
+      continue;
     }
-    
+
     // 3. 如果仍然為空，使用內建默認
-    if (!prompt || isInvalidPromptContent(prompt)) {
-      prompt = defaultPrompts[baseId] || '';
-    }
-    
-    results[baseId] = prompt;
+    results[baseId] = { content: defaultPrompts[baseId] || '', source: 'default' };
   }
-  
+
   return results;
 }
 
