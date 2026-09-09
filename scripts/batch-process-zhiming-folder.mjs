@@ -282,6 +282,8 @@ async function generateContent({ fileName, type, prompt, summaryText }) {
       'STRICT MODE:',
       `Only use the single document named "${fileName}".`,
       'Follow the exact structure requested by the prompt.',
+      'Write the ENTIRE output in Simplified Chinese (简体中文), even when the sermon is in English or Traditional Chinese. Never output Traditional Chinese characters.',
+      'Quote every Bible verse from the Simplified Chinese Union Version (简体中文和合本圣经).',
       'If uncertain, omit rather than invent.',
     ].join('\n'),
     store: false,

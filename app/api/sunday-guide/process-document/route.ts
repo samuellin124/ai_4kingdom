@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createDynamoDBClient } from '@/app/utils/dynamodb';
 import { PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { getPromptsInBatch, defaultPrompts } from '@/app/utils/aiPrompts';
+import { getPromptsByUnit, defaultPrompts } from '@/app/utils/aiPrompts';
 import { getSundayGuideUnitConfig } from '@/app/config/constants';
 import { optimizedQuery } from '@/app/utils/dynamodbHelpers';
 import { generateResponse } from '@/app/lib/openai/responses';
@@ -23,7 +23,7 @@ async function extractSermonTitle(openaiClient: OpenAI, summary: string, fileNam
     const fileNameHint = fileName ? `\n\n文件名稱（僅供參考）：${fileName}` : '';
     const res = await openaiClient.chat.completions.create({
       model: 'gpt-5.6-terra',
-      messages: [{ role: 'user', content: `從以下講章總結中提取講道標題，只回答標題本身，不要任何其他內容、標點或說明。注意：如果看到「讲章标题」、「一、讲章标题」等模板佔位符文字，請忽略它們，從總結內容中找出真實的講道主題作為標題。${fileNameHint}\n\n${summary.slice(0, 800)}` }],
+      messages: [{ role: 'user', content: `從以下講章總結中提取講道標題，只回答標題本身，不要任何其他內容、標點或說明。標題一律以简体中文輸出。注意：如果看到「讲章标题」、「一、讲章标题」等模板佔位符文字，請忽略它們，從總結內容中找出真實的講道主題作為標題。${fileNameHint}\n\n${summary.slice(0, 800)}` }],
       // gpt-5.6-terra 為推理模型：不支援 temperature，且 max_tokens 需改用 max_completion_tokens。
       // 標題抽取屬機械式任務，關閉推理以維持速度與成本。
       max_completion_tokens: 200,
@@ -255,42 +255,39 @@ async function processDocumentAsync(params: {
     console.log('[DEBUG] 從 AIPrompts 資料表獲取 prompts');
     const AI_PROMPTS_TABLE = process.env.NEXT_PUBLIC_AI_PROMPTS_TABLE || 'AIPrompts';
     const promptsToFetch = ['summary', 'devotional', 'bibleStudy'];
+    // 依單位取用提示詞：優先 `${baseId}.${unitId}`（例如 summary.cfscChurch），
+    // 找不到才回退到共用的 base ID，再回退到程式內建預設。
+    const promptUnitId = unitId || 'default';
     
-    console.log('[DEBUG] 正在批量獲取 prompts...', { table: AI_PROMPTS_TABLE, prompts: promptsToFetch });
-    const promptsFromDB = await getPromptsInBatch(promptsToFetch, AI_PROMPTS_TABLE);
-    
+    console.log('[DEBUG] 正在批量獲取 prompts...', { table: AI_PROMPTS_TABLE, prompts: promptsToFetch, unitId: promptUnitId });
+    const resolvedPrompts = await getPromptsByUnit(promptsToFetch, promptUnitId, AI_PROMPTS_TABLE);
+
     // 詳細驗證獲取的 prompts
-    console.log('[DEBUG] 獲取 prompts 結果驗證:', {
-      summary: { 
-        length: promptsFromDB.summary?.length || 0, 
-        preview: promptsFromDB.summary?.substring(0, 50) + '...',
-        hasContent: !!promptsFromDB.summary && promptsFromDB.summary.length > 20
-      },
-      devotional: { 
-        length: promptsFromDB.devotional?.length || 0, 
-        preview: promptsFromDB.devotional?.substring(0, 50) + '...',
-        hasContent: !!promptsFromDB.devotional && promptsFromDB.devotional.length > 20
-      },
-      bibleStudy: { 
-        length: promptsFromDB.bibleStudy?.length || 0, 
-        preview: promptsFromDB.bibleStudy?.substring(0, 50) + '...',
-        hasContent: !!promptsFromDB.bibleStudy && promptsFromDB.bibleStudy.length > 20
-      }
-    });    // 準備處理的內容類型，並確保每個類型都有對應的提示詞
+    console.log('[DEBUG] 獲取 prompts 結果驗證:', Object.fromEntries(
+      promptsToFetch.map(type => [type, {
+        length: resolvedPrompts[type]?.content.length || 0,
+        source: resolvedPrompts[type]?.source,
+        preview: resolvedPrompts[type]?.content.substring(0, 50) + '...',
+        hasContent: !!resolvedPrompts[type]?.content && resolvedPrompts[type].content.length > 20
+      }])
+    ));
+    // 準備處理的內容類型，並確保每個類型都有對應的提示詞
+    // isUnitCustom：該類型採用了單位專用提示詞 —— 此時不再套用下方共用的天數／字數硬性要求，
+    // 否則會與單位自訂的格式（例如 CFSC 的 14 天精簡靈修）互相矛盾。
     const contentTypes = [
-      { type: 'summary', prompt: promptsFromDB.summary || defaultPrompts.summary },
+      { type: 'summary', prompt: resolvedPrompts.summary?.content || defaultPrompts.summary, isUnitCustom: resolvedPrompts.summary?.source === 'unit' },
       // { type: 'fullText', prompt: '請完整保留原文內容，並加入適當的段落分隔。不要省略任何內容。' }, // Disabled fullText processing
-      { type: 'devotional', prompt: promptsFromDB.devotional || defaultPrompts.devotional },
-      { type: 'bibleStudy', prompt: promptsFromDB.bibleStudy || defaultPrompts.bibleStudy }
+      { type: 'devotional', prompt: resolvedPrompts.devotional?.content || defaultPrompts.devotional, isUnitCustom: resolvedPrompts.devotional?.source === 'unit' },
+      { type: 'bibleStudy', prompt: resolvedPrompts.bibleStudy?.content || defaultPrompts.bibleStudy, isUnitCustom: resolvedPrompts.bibleStudy?.source === 'unit' }
     ];
-    
+
     // 最終驗證使用的 prompts
     console.log('[DEBUG] 最終使用的 prompts 驗證:');
-    contentTypes.forEach(({ type, prompt }) => {
+    contentTypes.forEach(({ type, prompt, isUnitCustom }) => {
       const isUsingDefault = prompt === defaultPrompts[type];
       const isValid = prompt && prompt.length > 20 && !prompt.includes('無法直接訪問文件');
-      console.log(`[DEBUG] ${type}: 長度=${prompt.length}, 使用默認=${isUsingDefault}, 有效=${isValid}, 預覽=${prompt.substring(0, 40)}...`);
-      
+      console.log(`[DEBUG] ${type}: 長度=${prompt.length}, 單位自訂=${isUnitCustom}, 使用默認=${isUsingDefault}, 有效=${isValid}, 預覽=${prompt.substring(0, 40)}...`);
+
       if (!isValid) {
         console.warn(`[WARN] ${type} prompt 可能無效，將使用 defaultPrompts`);
       }
@@ -315,7 +312,7 @@ async function processDocumentAsync(params: {
   const REFUSAL_PHRASES = ['無法直接訪問', '无法直接访问', '我無法直接訪問', '請提供', '無法讀取', '無法從您上傳的文件中檢索到'];
 
   // 單一內容類型處理函式（保留重試機制），支援注入 summary 文字以供後續內容優先引用經文
-  async function processContentType({ type, prompt, summaryText }: { type: string, prompt: string, summaryText?: string }) {
+  async function processContentType({ type, prompt, summaryText, isUnitCustom }: { type: string, prompt: string, summaryText?: string, isUnitCustom?: boolean }) {
       console.log(`[DEBUG] 並行處理 ${type} 內容開始...`);
 
       const maxRuns = 2; // 最多重試 2 次，搭配 MAX_POLLS=20 確保總時間 < 300s
@@ -330,7 +327,7 @@ async function processDocumentAsync(params: {
         if (type !== 'summary' && summaryText) {
           inputMessages.push({
             role: 'user',
-            content: `Here is the sermon summary already generated:\n---\n${summaryText}\n---\n\nWhen selecting and quoting Bible verses for this ${type}, you MUST:\n1) FIRST prioritize verses already identified in the summary and label them [From Summary];\n2) SECOND use verses directly present in the sermon file and label them [In Sermon];\n3) ONLY THEN, if fewer than required, add supplemental verses labeled [Supplemental: reason] with a short justification.\n\nAlways paste the exact verse text (CUV for Chinese; NIV for English). Avoid duplication unless the sermon itself repeats the verse.`
+            content: `Here is the sermon summary already generated:\n---\n${summaryText}\n---\n\nWhen selecting and quoting Bible verses for this ${type}, you MUST:\n1) FIRST prioritize verses already identified in the summary and label them [From Summary];\n2) SECOND use verses directly present in the sermon file and label them [In Sermon];\n3) ONLY THEN, if fewer than required, add supplemental verses labeled [Supplemental: reason] with a short justification.\n\nAlways paste the exact verse text from the Simplified Chinese Union Version (简体中文和合本圣经), even when the sermon is in English or Traditional Chinese. Avoid duplication unless the sermon itself repeats the verse.`
           });
         }
 
@@ -342,13 +339,17 @@ async function processDocumentAsync(params: {
 ${prompt}
 
 特別注意：
-${type === 'devotional' ? 
+${isUnitCustom ?
+  `- 完全依照上述提示詞規定的結構、段落數與字數；不要自行增減段落，也不要超出字數上限
+  - 提示詞若要求精簡，就保持精簡，不要為了篇幅而加長` :
+
+  type === 'devotional' ?
   `- 必須提供完整的7天靈修指南（週一到週日）
   - 每天必須包含：a) 該部分講道總結, b) 3節經文（含完整經文內容）, c) 禱告指導
   - 每天內容至少400-500字，總計3000+字
   - 內容要像資深牧者的親切指導，豐富詳細` :
-  
-  type === 'bibleStudy' ? 
+
+  type === 'bibleStudy' ?
   `- 必須包含以下完整結構：
     1. 背景（講道總結）
     2. 三個重要點
@@ -360,10 +361,12 @@ ${type === 'devotional' ?
     8. 敬拜詩歌（3首推薦，來自讚美之泉、小羊詩歌、迦南詩選或泥土音樂）
     9. 見證分享（100-200字）
   - 總內容至少2000-2500字，要像經驗豐富的小組長的完整預備` :
-  
+
   `- 提供詳細完整的內容，至少1500-2000字
   - 包含所有重點、細節、例證和應用`
 }
+
+輸出語言：整份輸出一律使用简体中文（標題、段落、問題、禱告、詩歌名稱、見證皆同），經文一律引用简体中文和合本圣经。即使講章原文是英文或繁體中文，輸出仍需為简体中文。
 
 請確保內容結構清晰、格式完整，就像專業的教會資源一樣。`
         });
@@ -383,6 +386,8 @@ ${type === 'devotional' ?
             reasoningEffort: 'low',
             instructions: `STRICT MODE:
 - Only use the sermon file (and the provided summary for verse priority when present).
+- Write the ENTIRE output in Simplified Chinese (简体中文), including headings, body text, questions, prayers, song titles and testimony. This applies even when the sermon file is in English or Traditional Chinese. Never output Traditional Chinese characters.
+- Quote every Bible verse from the Simplified Chinese Union Version (简体中文和合本圣经).
 - For every Bible verse: paste full text and append one of [From Summary] / [In Sermon] / [Supplemental: reason].
 - Follow the exact format structure requested in the prompt.
 - For ${type}, ensure ALL required sections are included with proper formatting.
@@ -445,7 +450,7 @@ ${type === 'devotional' ?
     // 先產出 summary，再並行產出 devotional / bibleStudy（注入 summary 內容以強化經文一致性）
     console.log('[DEBUG] 先產出 summary，再以其作為後續依據');
     const tSummary = Date.now();
-    const summaryRes = await processContentType({ type: 'summary', prompt: (contentTypes[0].prompt) });
+    const summaryRes = await processContentType({ type: 'summary', prompt: (contentTypes[0].prompt), isUnitCustom: contentTypes[0].isUnitCustom });
     results['summary'] = summaryRes.content;
     attemptsUsed.summary = summaryRes.attempts;
     timing.summary = secSince(tSummary);
@@ -457,8 +462,8 @@ ${type === 'devotional' ?
     console.log('[DEBUG] 產出 devotional / bibleStudy（帶入 summary 內容以優先經文）');
     const tDevBible = Date.now();
     const settled = await Promise.allSettled([
-      processContentType({ type: 'devotional', prompt: (contentTypes[1].prompt), summaryText: results.summary }),
-      processContentType({ type: 'bibleStudy', prompt: (contentTypes[2].prompt), summaryText: results.summary })
+      processContentType({ type: 'devotional', prompt: (contentTypes[1].prompt), summaryText: results.summary, isUnitCustom: contentTypes[1].isUnitCustom }),
+      processContentType({ type: 'bibleStudy', prompt: (contentTypes[2].prompt), summaryText: results.summary, isUnitCustom: contentTypes[2].isUnitCustom })
     ]);
     for (const s of settled) {
       if (s.status === 'fulfilled') {
